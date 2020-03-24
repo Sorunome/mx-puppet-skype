@@ -12,7 +12,7 @@ limitations under the License.
 */
 import {
 	PuppetBridge, IRemoteUser, IRemoteRoom, IReceiveParams, IMessageEvent, IFileEvent, Log, MessageDeduplicator, Util,
-	ExpireSet,
+	ExpireSet, IRetList,
 } from "mx-puppet-bridge";
 import { Client } from "./client";
 import * as skypeHttp from "skype-http";
@@ -22,6 +22,8 @@ import * as decodeHtml from "decode-html";
 import * as escapeHtml from "escape-html";
 
 const log = new Log("SkypePuppet:skype");
+
+const ROOM_TYPE_DM = 8;
 
 interface ISkypePuppet {
 	client: Client;
@@ -53,12 +55,11 @@ export class Skype {
 
 	public getRoomParams(puppetId: number, conversation: skypeHttp.Conversation): IRemoteRoom {
 		const roomType = Number(conversation.id.split(":")[0]);
-		let roomId = conversation.id;
-		const isDirect = roomType === 8;
+		const isDirect = roomType === ROOM_TYPE_DM;
 		if (isDirect) {
 			return {
 				puppetId,
-				roomId: `dm-${puppetId}-${roomId}`,
+				roomId: `dm-${puppetId}-${conversation.id}`,
 				isDirect: true,
 			};
 		}
@@ -76,7 +77,7 @@ export class Skype {
 		}
 		return {
 			puppetId,
-			roomId,
+			roomId: conversation.id,
 			name,
 			avatarUrl,
 		};
@@ -84,7 +85,6 @@ export class Skype {
 
 	public async getSendParams(puppetId: number, resource: skypeHttp.resources.Resource): Promise<IReceiveParams | null> {
 		const roomType = Number(resource.conversation.split(":")[0]);
-		let roomId = resource.conversation;
 		const p = this.puppets[puppetId];
 		const contact = await p.client.getContact(resource.from.raw);
 		const conversation = await p.client.getConversation({
@@ -95,10 +95,18 @@ export class Skype {
 			return null;
 		}
 		return {
-			user: await this.getUserParams(puppetId, contact),
-			room: await this.getRoomParams(puppetId, conversation),
+			user: this.getUserParams(puppetId, contact),
+			room: this.getRoomParams(puppetId, conversation),
 			eventId: (resource as any).clientId || resource.native.clientmessageid || resource.id, // tslint:disable-line no-any
 		};
+	}
+
+	public async stopClient(puppetId: number) {
+		const p = this.puppets[puppetId];
+		if (!p) {
+			return;
+		}
+		await p.client.disconnect();
 	}
 
 	public async startClient(puppetId: number) {
@@ -106,7 +114,7 @@ export class Skype {
 		if (!p) {
 			return;
 		}
-		p.client = new Client(p.data.username, p.data.password);
+		p.client = new Client(p.data.username, p.data.password, p.data.state);
 		const client = p.client;
 		client.on("text", async (resource: skypeHttp.resources.TextResource) => {
 			try {
@@ -124,7 +132,7 @@ export class Skype {
 		});
 		client.on("location", async (resource: skypeHttp.resources.RichTextLocationResource) => {
 			try {
-				
+
 			} catch (err) {
 				log.error("Error while handling location event", err);
 			}
@@ -150,8 +158,28 @@ export class Skype {
 				log.error("Error while handling presence event", err);
 			}
 		});
-		await client.connect();
-		await this.puppet.setUserId(puppetId, client.username);
+		const MINUTE = 60000;
+		client.on("error", async (err: Error) => {
+			await this.puppet.sendStatusMessage(puppetId, "Error:" + err);
+			await this.puppet.sendStatusMessage(puppetId, "Reconnecting in a minute... " + err.message);
+			setTimeout(async () => {
+				await this.stopClient(puppetId);
+				await this.startClient(puppetId);
+			}, MINUTE);
+		});
+		try {
+			await client.connect();
+			await this.puppet.setUserId(puppetId, client.username);
+			p.data.state = client.getState;
+			await this.puppet.setPuppetData(puppetId, p.data);
+			await this.puppet.sendStatusMessage(puppetId, "connected");
+		} catch (err) {
+			log.error("Failed to connect", err);
+			await this.puppet.sendStatusMessage(puppetId, "Failed to connect, reconnecting in a minute... " + err.message);
+			setTimeout(async () => {
+				await this.startClient(puppetId);
+			}, MINUTE);
+		}
 	}
 
 	public async newPuppet(puppetId: number, data: any) {
@@ -201,6 +229,54 @@ export class Skype {
 			return null;
 		}
 		return this.getRoomParams(room.puppetId, conversation);
+	}
+
+	public async getDmRoom(remoteUser: IRemoteUser): Promise<string | null> {
+		const p = this.puppets[remoteUser.puppetId];
+		if (!p) {
+			return null;
+		}
+		const contact = await p.client.getContact(remoteUser.userId);
+		if (!contact) {
+			return null;
+		}
+		return `dm-${remoteUser.puppetId}-${contact.mri}`;
+	}
+
+	public async listUsers(puppetId: number): Promise<IRetList[]> {
+		const p = this.puppets[puppetId];
+		if (!p) {
+			return [];
+		}
+		const reply: IRetList[] = [];
+		for (const [, contact] of p.client.contacts) {
+			if (!contact) {
+				continue;
+			}
+			reply.push({
+				id: contact.mri,
+				name: contact.displayName,
+			});
+		}
+		return reply;
+	}
+
+	public async listRooms(puppetId: number): Promise<IRetList[]> {
+		const p = this.puppets[puppetId];
+		if (!p) {
+			return [];
+		}
+		const reply: IRetList[] = [];
+		for (const [, conversation] of p.client.conversations) {
+			if (!conversation || conversation.id.startsWith("8:")) {
+				continue;
+			}
+			reply.push({
+				id: conversation.id,
+				name: (conversation.threadProperties && conversation.threadProperties.topic) || "",
+			});
+		}
+		return reply;
 	}
 
 	public async getUserIdsInRoom(room: IRemoteRoom): Promise<Set<string> | null> {

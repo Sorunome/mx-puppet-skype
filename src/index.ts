@@ -61,7 +61,6 @@ const protocol: IProtocolInformation = {
 		image: true,
 		audio: true,
 		file: true,
-//		presence: true, // we want to be able to send presence
 		edit: true,
 		globalNamespace: true,
 	},
@@ -101,7 +100,17 @@ async function run() {
 	puppet.on("file", skype.handleMatrixFile.bind(skype));
 	puppet.setCreateUserHook(skype.createUser.bind(skype));
 	puppet.setCreateRoomHook(skype.createRoom.bind(skype));
+	puppet.setGetDmRoomIdHook(skype.getDmRoom.bind(skype));
+	puppet.setListUsersHook(skype.listUsers.bind(skype));
+	puppet.setListRoomsHook(skype.listRooms.bind(skype));
 	puppet.setGetUserIdsInRoomHook(skype.getUserIdsInRoom.bind(skype));
+	puppet.setGetDescHook(async (puppetId: number, data: any): Promise<string> => {
+		let s = "Skype";
+		if (data.username) {
+			s += ` as \`${data.username.substr("8:".length)}\``;
+		}
+		return s;
+	});
 	puppet.setGetDataFromStrHook(async (str: string): Promise<IRetData> => {
 		const retData = {
 			success: false,

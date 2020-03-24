@@ -16,19 +16,21 @@ import { EventEmitter } from "events";
 import * as skypeHttp from "skype-http";
 import { Contact as SkypeContact } from "skype-http/dist/lib/types/contact";
 import { NewMediaMessage as SkypeNewMediaMessage } from "skype-http/dist/lib/interfaces/api/api";
+import { Context as SkypeContext } from "skype-http/dist/lib/interfaces/api/context";
 
 const log = new Log("SkypePuppet:client");
 
-const ID_TIMEOUT = 60 * 1000;
+const ID_TIMEOUT = 60000;
 
 export class Client extends EventEmitter {
+	public contacts: Map<string, SkypeContact | null> = new Map();
+	public conversations: Map<string, skypeHttp.Conversation | null> = new Map();
 	private api: skypeHttp.Api;
 	private handledIds: ExpireSet<string>;
-	private contacts: Map<String, SkypeContact | null> = new Map();
-	private conversations: Map<String, skypeHttp.Conversation | null> = new Map();
 	constructor(
 		private loginUsername: string,
 		private password: string,
+		private state?: SkypeContext.Json,
 	) {
 		super();
 		this.handledIds = new ExpireSet(ID_TIMEOUT);
@@ -38,14 +40,32 @@ export class Client extends EventEmitter {
 		return "8:" + this.api.context.username;
 	}
 
+	public get getState(): SkypeContext.Json {
+		return this.api.getState();
+	}
+
 	public async connect() {
-		this.api = await skypeHttp.connect({
-			credentials: {
-				username: this.loginUsername,
-				password: this.password,
-			},
-			verbose: true,
-		});
+		if (this.state) {
+			try {
+				this.api = await skypeHttp.connect({ state: this.state, verbose: true });
+			} catch (err) {
+				this.api = await skypeHttp.connect({
+					credentials: {
+						username: this.loginUsername,
+						password: this.password,
+					},
+					verbose: true,
+				});
+			}
+		} else {
+			this.api = await skypeHttp.connect({
+				credentials: {
+					username: this.loginUsername,
+					password: this.password,
+				},
+				verbose: true,
+			});
+		}
 
 		this.api.on("event", (evt: skypeHttp.events.EventMessage) => {
 			if (!evt || !evt.resource) {
@@ -86,6 +106,7 @@ export class Client extends EventEmitter {
 
 		this.api.on("error", (err: Error) => {
 			log.error("An error occured", err);
+			this.emit("error", err);
 		});
 
 		await this.api.listen();
@@ -116,7 +137,7 @@ export class Client extends EventEmitter {
 			return this.contacts.get(fullId) || null;
 		}
 		if (hasStart) {
-			id = id.substr(id.indexOf(":")+1);
+			id = id.substr(id.indexOf(":") + 1);
 		}
 		try {
 			const rawContact = await this.api.getContact(id);
@@ -177,7 +198,7 @@ export class Client extends EventEmitter {
 		}
 		return await Util.DownloadFile(url, {
 			cookies: this.api.context.cookies,
-			headers: { Authorization: 'skype_token ' + this.api.context.skypeToken.value },
+			headers: { Authorization: "skype_token " + this.api.context.skypeToken.value },
 		});
 	}
 
@@ -206,14 +227,14 @@ export class Client extends EventEmitter {
 
 	public async sendDocument(
 		conversationId: string,
-		opts: SkypeNewMediaMessage
+		opts: SkypeNewMediaMessage,
 	): Promise<skypeHttp.Api.SendMessageResult> {
 		return await this.api.sendDocument(opts, conversationId);
 	}
 
 	public async sendImage(
 		conversationId: string,
-		opts: SkypeNewMediaMessage
+		opts: SkypeNewMediaMessage,
 	): Promise<skypeHttp.Api.SendMessageResult> {
 		return await this.api.sendImage(opts, conversationId);
 	}
