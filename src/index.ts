@@ -107,7 +107,7 @@ async function run() {
 	puppet.setGetDescHook(async (puppetId: number, data: any): Promise<string> => {
 		let s = "Skype";
 		if (data.username) {
-			s += ` as \`${data.username.substr("8:".length)}\``;
+			s += ` as \`${data.username}\``;
 		}
 		return s;
 	});

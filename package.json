@@ -18,7 +18,7 @@
     "events": "^3.0.0",
     "js-yaml": "^3.13.1",
     "mx-puppet-bridge": "0.0.35-1",
-    "skype-http": "git://github.com/metasonic/skype-http#ea08e617d4f2bd3b16a2de79fe4efb9dbbe489fc",
+    "skype-http": "git://github.com/Sorunome/skype-http#10555125f46307bbff93a8c4779889f4100669d2",
     "tslint": "^5.17.0",
     "typescript": "^3.7.4"
   },
