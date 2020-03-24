@@ -116,19 +116,20 @@ async function run() {
 			success: false,
 		} as IRetData;
 		const [username, password] = str.split(" ");
+		const data: any = {
+			username,
+			password,
+		};
 		try {
 			const client = new Client(username, password);
 			await client.connect();
+			data.state = client.getState;
 			await client.disconnect();
 		} catch (err) {
 			retData.error = "Username or password wrong";
 			return retData;
 		}
 		retData.success = true;
-		const data: any = {
-			username,
-			password,
-		};
 		retData.data = data;
 		return retData;
 	});
