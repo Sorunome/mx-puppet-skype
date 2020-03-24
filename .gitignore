@@ -1,0 +1,5 @@
+node_modules
+config.yaml
+build
+skype-registration.yaml
+*.db
