@@ -11,11 +11,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 import {
-	PuppetBridge, IRemoteUser, IRemoteRoom, IReceiveParams, IMessageEvent, IFileEvent, Log, MessageDeduplicator,
+	PuppetBridge, IRemoteUser, IRemoteRoom, IReceiveParams, IMessageEvent, IFileEvent, Log, MessageDeduplicator, Util,
+	ExpireSet,
 } from "mx-puppet-bridge";
 import { Client } from "./client";
 import * as skypeHttp from "skype-http";
 import { Contact as SkypeContact } from "skype-http/dist/lib/types/contact";
+import { NewMediaMessage as SkypeNewMediaMessage } from "skype-http/dist/lib/interfaces/api/api";
 import * as decodeHtml from "decode-html";
 import * as escapeHtml from "escape-html";
 
@@ -24,6 +26,7 @@ const log = new Log("SkypePuppet:skype");
 interface ISkypePuppet {
 	client: Client;
 	data: any;
+	deletedMessages: ExpireSet<string>;
 }
 
 interface ISkypePuppets {
@@ -94,7 +97,7 @@ export class Skype {
 		return {
 			user: await this.getUserParams(puppetId, contact),
 			room: await this.getRoomParams(puppetId, conversation),
-			eventId: (resource as any).clientId, // tslint:disable-line no-any
+			eventId: (resource as any).clientId || resource.native.clientmessageid || resource.id, // tslint:disable-line no-any
 		};
 	}
 
@@ -127,7 +130,7 @@ export class Skype {
 		});
 		client.on("file", async (resource: skypeHttp.resources.FileResource) => {
 			try {
-				
+				await this.handleSkypeFile(puppetId, resource);
 			} catch (err) {
 				log.error("Error while handling file event", err);
 			}
@@ -148,9 +151,11 @@ export class Skype {
 			await this.deletePuppet(puppetId);
 		}
 		const client = new Client(data.username, data.password);
+		const TWO_MIN = 120000;
 		this.puppets[puppetId] = {
 			client,
 			data,
+			deletedMessages: new ExpireSet(TWO_MIN),
 		};
 		await this.startClient(puppetId);
 	}
@@ -213,6 +218,7 @@ export class Skype {
 		if (!p) {
 			return;
 		}
+		log.info("Received message from matrix");
 		const conversation = await p.client.getConversation(room);
 		if (!conversation) {
 			log.warn(`Room ${room.roomId} not found!`);
@@ -227,10 +233,99 @@ export class Skype {
 		const dedupeKey = `${room.puppetId};${room.roomId}`;
 		this.messageDeduplicator.lock(dedupeKey, p.client.username, msg);
 		const ret = await p.client.sendMessage(conversation.id, msg);
-		const eventId = ret && ret.clientMessageId;
-		this.messageDeduplicator.unlock(dedupeKey, p.client.username, eventId);
+		const dedupeId = ret && ret.clientMessageId;
+		const eventId = ret && ret.MessageId;
+		this.messageDeduplicator.unlock(dedupeKey, p.client.username, dedupeId);
 		if (eventId) {
-			await this.puppet.eventStore.insert(room.puppetId, data.eventId!, eventId);
+			await this.puppet.eventSync.insert(room.puppetId, data.eventId!, eventId);
+		}
+	}
+
+	public async handleMatrixEdit(room: IRemoteRoom, eventId: string, data: IMessageEvent) {
+		const p = this.puppets[room.puppetId];
+		if (!p) {
+			return;
+		}
+		log.info("Received edit from matrix");
+		const conversation = await p.client.getConversation(room);
+		if (!conversation) {
+			log.warn(`Room ${room.roomId} not found!`);
+			return;
+		}
+		let msg: string;
+		if (data.formattedBody) {
+			msg = data.formattedBody;
+		} else {
+			msg = escapeHtml(data.body);
+		}
+		const dedupeKey = `${room.puppetId};${room.roomId}`;
+		this.messageDeduplicator.lock(dedupeKey, p.client.username, msg);
+		await p.client.sendEdit(conversation.id, eventId, msg);
+		const newEventId = "";
+		this.messageDeduplicator.unlock(dedupeKey, p.client.username, newEventId);
+		if (newEventId) {
+			await this.puppet.eventSync.insert(room.puppetId, data.eventId!, newEventId);
+		}
+	}
+
+	public async handleMatrixRedact(room: IRemoteRoom, eventId: string) {
+		const p = this.puppets[room.puppetId];
+		if (!p) {
+			return;
+		}
+		log.info("Received edit from matrix");
+		const conversation = await p.client.getConversation(room);
+		if (!conversation) {
+			log.warn(`Room ${room.roomId} not found!`);
+			return;
+		}
+		p.deletedMessages.add(eventId);
+		await p.client.sendDelete(conversation.id, eventId);
+	}
+
+	public async handleMatrixImage(room: IRemoteRoom, data: IFileEvent) {
+		await this.handleMatrixFile(room, data, "sendImage");
+	}
+
+	public async handleMatrixAudio(room: IRemoteRoom, data: IFileEvent) {
+		await this.handleMatrixFile(room, data, "sendAudio");
+	}
+
+	public async handleMatrixFile(room: IRemoteRoom, data: IFileEvent, method?: string) {
+		if (!method) {
+			method = "sendDocument";
+		}
+		const p = this.puppets[room.puppetId];
+		if (!p) {
+			return;
+		}
+		log.info("Received file from matrix");
+		const conversation = await p.client.getConversation(room);
+		if (!conversation) {
+			log.warn(`Room ${room.roomId} not found!`);
+			return;
+		}
+		const buffer = await Util.DownloadFile(data.url);
+		const opts: SkypeNewMediaMessage = {
+			file: buffer,
+			name: data.filename,
+		};
+		if (data.info) {
+			if (data.info.w) {
+				opts.width = data.info.w;
+			}
+			if (data.info.h) {
+				opts.height = data.info.h;
+			}
+		}
+		const dedupeKey = `${room.puppetId};${room.roomId}`;
+		this.messageDeduplicator.lock(dedupeKey, p.client.username, `file:${data.filename}`);
+		const ret = await p.client[method](conversation.id, opts);
+		const dedupeId = ret && ret.clientMessageId;
+		const eventId = ret && ret.MessageId;
+		this.messageDeduplicator.unlock(dedupeKey, p.client.username, dedupeId);
+		if (eventId) {
+			await this.puppet.eventSync.insert(room.puppetId, data.eventId!, eventId);
 		}
 	}
 
@@ -250,28 +345,71 @@ export class Skype {
 			log.warn("Couldn't generate params");
 			return;
 		}
+		let msg = resource.content;
+		let emote = false;
+		if (resource.native && resource.native.skypeemoteoffset) {
+			emote = true;
+			msg = msg.substr(Number(resource.native.skypeemoteoffset));
+		}
 		const dedupeKey = `${puppetId};${params.room.roomId}`;
-		if (await this.messageDeduplicator.dedupe(dedupeKey, params.user.userId, params.eventId, resource.content)) {
+		if (await this.messageDeduplicator.dedupe(dedupeKey, params.user.userId, params.eventId, msg)) {
+			log.silly("normal message dedupe");
 			return;
 		}
 		if (!rich) {
 			await this.puppet.sendMessage(params, {
-				body: resource.content,
+				body: msg,
+				emote,
 			});
 		} else if (resource.native && resource.native.skypeeditedid) {
 			if (resource.content) {
 				await this.puppet.sendEdit(params, resource.native.skypeeditedid, {
-					body: resource.content,
-					formattedBody: resource.content,
+					body: msg,
+					formattedBody: msg,
+					emote,
 				});
+			} else if (p.deletedMessages.has(resource.native.skypeeditedid)) {
+				log.silly("normal message redact dedupe");
+				return;
 			} else {
 				await this.puppet.sendRedact(params, resource.native.skypeeditedid);
 			}
 		} else {
 			await this.puppet.sendMessage(params, {
-				body: resource.content,
-				formattedBody: resource.content,
+				body: msg,
+				formattedBody: msg,
+				emote,
 			});
 		}
+	}
+
+	private async handleSkypeFile(puppetId: number, resource: skypeHttp.resources.FileResource) {
+		const p = this.puppets[puppetId];
+		if (!p) {
+			return;
+		}
+		log.info("Got new skype file");
+		log.silly(resource);
+		const params = await this.getSendParams(puppetId, resource);
+		if (!params) {
+			log.warn("Couldn't generate params");
+			return;
+		}
+		const filename = resource.original_file_name;
+		const dedupeKey = `${puppetId};${params.room.roomId}`;
+		if (await this.messageDeduplicator.dedupe(dedupeKey, params.user.userId, params.eventId, `file:${filename}`)) {
+			log.silly("file message dedupe");
+			return;
+		}
+		if (resource.native && resource.native.skypeeditedid && !resource.uri) {
+			if (p.deletedMessages.has(resource.native.skypeeditedid)) {
+				log.silly("file message redact dedupe");
+				return;
+			}
+			await this.puppet.sendRedact(params, resource.native.skypeeditedid);
+			return;
+		}
+		const buffer = await p.client.downloadFile(resource.uri);
+		await this.puppet.sendFileDetect(params, buffer, filename);
 	}
 }

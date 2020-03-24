@@ -58,8 +58,11 @@ if (options.help) {
 
 const protocol: IProtocolInformation = {
 	features: {
-//		file: true, // no need for the others as we auto-detect types anyways
+		image: true,
+		audio: true,
+		file: true,
 //		presence: true, // we want to be able to send presence
+		edit: true,
 		globalNamespace: true,
 	},
 	id: "skype",
@@ -91,6 +94,11 @@ async function run() {
 	puppet.on("puppetNew", skype.newPuppet.bind(skype));
 	puppet.on("puppetDelete", skype.deletePuppet.bind(skype));
 	puppet.on("message", skype.handleMatrixMessage.bind(skype));
+	puppet.on("edit", skype.handleMatrixEdit.bind(skype));
+	puppet.on("redact", skype.handleMatrixRedact.bind(skype));
+	puppet.on("image", skype.handleMatrixImage.bind(skype));
+	puppet.on("audio", skype.handleMatrixAudio.bind(skype));
+	puppet.on("file", skype.handleMatrixFile.bind(skype));
 	puppet.setCreateUserHook(skype.createUser.bind(skype));
 	puppet.setCreateRoomHook(skype.createRoom.bind(skype));
 	puppet.setGetUserIdsInRoomHook(skype.getUserIdsInRoom.bind(skype));

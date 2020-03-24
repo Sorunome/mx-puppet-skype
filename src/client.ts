@@ -11,10 +11,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-import { Log, ExpireSet, IRemoteRoom } from "mx-puppet-bridge";
+import { Log, ExpireSet, IRemoteRoom, Util } from "mx-puppet-bridge";
 import { EventEmitter } from "events";
 import * as skypeHttp from "skype-http";
 import { Contact as SkypeContact } from "skype-http/dist/lib/types/contact";
+import { NewMediaMessage as SkypeNewMediaMessage } from "skype-http/dist/lib/interfaces/api/api";
 
 const log = new Log("SkypePuppet:client");
 
@@ -168,9 +169,50 @@ export class Client extends EventEmitter {
 		}
 	}
 
+	public async downloadFile(url: string): Promise<Buffer> {
+		if (!url.includes("/views/imgpsh_fullsize_anim")) {
+			url = url + "/views/imgpsh_fullsize_anim";
+		}
+		return await Util.DownloadFile(url, {
+			cookies: this.api.context.cookies,
+			headers: { Authorization: 'skype_token ' + this.api.context.skypeToken.value },
+		});
+	}
+
 	public async sendMessage(conversationId: string, msg: string): Promise<skypeHttp.Api.SendMessageResult> {
 		return await this.api.sendMessage({
 			textContent: msg,
 		}, conversationId);
+	}
+
+	public async sendEdit(conversationId: string, messageId: string, msg: string) {
+		return await this.api.sendEdit({
+			textContent: msg,
+		}, conversationId, messageId);
+	}
+
+	public async sendDelete(conversationId: string, messageId: string) {
+		return await this.api.sendDelete(conversationId, messageId);
+	}
+
+	public async sendAudio(
+		conversationId: string,
+		opts: SkypeNewMediaMessage,
+	): Promise<skypeHttp.Api.SendMessageResult> {
+		return await this.api.sendAudio(opts, conversationId);
+	}
+
+	public async sendDocument(
+		conversationId: string,
+		opts: SkypeNewMediaMessage
+	): Promise<skypeHttp.Api.SendMessageResult> {
+		return await this.api.sendDocument(opts, conversationId);
+	}
+
+	public async sendImage(
+		conversationId: string,
+		opts: SkypeNewMediaMessage
+	): Promise<skypeHttp.Api.SendMessageResult> {
+		return await this.api.sendImage(opts, conversationId);
 	}
 }
