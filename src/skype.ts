@@ -106,6 +106,7 @@ export class Skype {
 		if (!p) {
 			return;
 		}
+		p.client = new Client(p.data.username, p.data.password);
 		const client = p.client;
 		client.on("text", async (resource: skypeHttp.resources.TextResource) => {
 			try {
@@ -137,9 +138,16 @@ export class Skype {
 		});
 		client.on("typing", async (resource: skypeHttp.resources.Resource, typing: boolean) => {
 			try {
-				
+				await this.handleSkypeTyping(puppetId, resource, typing);
 			} catch (err) {
 				log.error("Error while handling typing event", err);
+			}
+		});
+		client.on("presence", async (resource: skypeHttp.resources.Resource) => {
+			try {
+				await this.handleSkypePresence(puppetId, resource);
+			} catch (err) {
+				log.error("Error while handling presence event", err);
 			}
 		});
 		await client.connect();
@@ -411,5 +419,48 @@ export class Skype {
 		}
 		const buffer = await p.client.downloadFile(resource.uri);
 		await this.puppet.sendFileDetect(params, buffer, filename);
+	}
+
+	private async handleSkypeTyping(puppetId: number, resource: skypeHttp.resources.Resource, typing: boolean) {
+		const p = this.puppets[puppetId];
+		if (!p) {
+			return;
+		}
+		log.info("Got new skype typing event");
+		log.silly(resource);
+		const params = await this.getSendParams(puppetId, resource);
+		if (!params) {
+			log.warn("Couldn't generate params");
+			return;
+		}
+		await this.puppet.setUserTyping(params, typing);
+	}
+
+	private async handleSkypePresence(puppetId: number, resource: skypeHttp.resources.Resource) {
+		const p = this.puppets[puppetId];
+		if (!p || !resource.native) {
+			return;
+		}
+		log.info("Got new skype presence event");
+		log.silly(resource);
+		const content = JSON.parse(resource.native.content);
+		const contact = await p.client.getContact(content.user);
+		const conversation = await p.client.getConversation({
+			puppetId,
+			roomId: resource.conversation,
+		});
+		if (!contact || !conversation) {
+			log.warn("Couldn't generate params");
+			return;
+		}
+		const params: IReceiveParams = {
+			user: this.getUserParams(puppetId, contact),
+			room: this.getRoomParams(puppetId, conversation),
+		};
+		const [id, _, clientId] = content.consumptionhorizon.split(";");
+		params.eventId = id;
+		await this.puppet.sendReadReceipt(params);
+		params.eventId = clientId;
+		await this.puppet.sendReadReceipt(params);
 	}
 }

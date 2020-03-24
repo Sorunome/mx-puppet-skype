@@ -77,7 +77,9 @@ export class Client extends EventEmitter {
 					}
 					break;
 				case "ThreadActivity":
-//					log.silly(resource);
+					if (subtype === "MemberConsumptionHorizonUpdate") {
+						this.emit("presence", resource);
+					}
 					break;
 			}
 		});
