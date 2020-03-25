@@ -10,6 +10,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+
 import {
 	PuppetBridge, IRemoteUser, IRemoteRoom, IReceiveParams, IMessageEvent, IFileEvent, Log, MessageDeduplicator, Util,
 	ExpireSet, IRetList,
@@ -20,6 +21,8 @@ import { Contact as SkypeContact } from "skype-http/dist/lib/types/contact";
 import { NewMediaMessage as SkypeNewMediaMessage } from "skype-http/dist/lib/interfaces/api/api";
 import * as decodeHtml from "decode-html";
 import * as escapeHtml from "escape-html";
+import { MatrixMessageParser } from "./matrixmessageparser";
+import { SkypeMessageParser } from "./skypemessageparser";
 
 const log = new Log("SkypePuppet:skype");
 
@@ -38,10 +41,14 @@ interface ISkypePuppets {
 export class Skype {
 	private puppets: ISkypePuppets = {};
 	private messageDeduplicator: MessageDeduplicator;
+	private matrixMessageParser: MatrixMessageParser;
+	private skypeMessageParser: SkypeMessageParser;
 	constructor(
 		private puppet: PuppetBridge,
 	) {
 		this.messageDeduplicator = new MessageDeduplicator();
+		this.matrixMessageParser = new MatrixMessageParser();
+		this.skypeMessageParser = new SkypeMessageParser();
 	}
 
 	public getUserParams(puppetId: number, contact: SkypeContact): IRemoteUser {
@@ -160,8 +167,8 @@ export class Skype {
 		});
 		const MINUTE = 60000;
 		client.on("error", async (err: Error) => {
-			await this.puppet.sendStatusMessage(puppetId, "Error:" + err);
-			await this.puppet.sendStatusMessage(puppetId, "Reconnecting in a minute... " + err.message);
+			await this.puppet.sendStatusMessage(puppetId, "Error: " + err);
+			await this.puppet.sendStatusMessage(puppetId, "Reconnecting in a minute... ");
 			setTimeout(async () => {
 				await this.stopClient(puppetId);
 				await this.startClient(puppetId);
@@ -175,7 +182,7 @@ export class Skype {
 			await this.puppet.sendStatusMessage(puppetId, "connected");
 		} catch (err) {
 			log.error("Failed to connect", err);
-			await this.puppet.sendStatusMessage(puppetId, "Failed to connect, reconnecting in a minute... " + err.message);
+			await this.puppet.sendStatusMessage(puppetId, "Failed to connect, reconnecting in a minute... " + err);
 			setTimeout(async () => {
 				await this.startClient(puppetId);
 			}, MINUTE);
@@ -310,7 +317,7 @@ export class Skype {
 		}
 		let msg: string;
 		if (data.formattedBody) {
-			msg = data.formattedBody;
+			msg = this.matrixMessageParser.parse(data.formattedBody);
 		} else {
 			msg = escapeHtml(data.body);
 		}
@@ -338,7 +345,7 @@ export class Skype {
 		}
 		let msg: string;
 		if (data.formattedBody) {
-			msg = data.formattedBody;
+			msg = this.matrixMessageParser.parse(data.formattedBody);
 		} else {
 			msg = escapeHtml(data.body);
 		}
@@ -440,18 +447,20 @@ export class Skype {
 			log.silly("normal message dedupe");
 			return;
 		}
-		if (!rich) {
-			await this.puppet.sendMessage(params, {
+		let sendMsg: IMessageEvent;
+		if (rich) {
+			sendMsg = this.skypeMessageParser.parse(msg);
+		} else {
+			sendMsg = {
 				body: msg,
-				emote,
-			});
-		} else if (resource.native && resource.native.skypeeditedid) {
+			};
+		}
+		if (emote) {
+			sendMsg.emote = true;
+		}
+		if (resource.native && resource.native.skypeeditedid) {
 			if (resource.content) {
-				await this.puppet.sendEdit(params, resource.native.skypeeditedid, {
-					body: msg,
-					formattedBody: msg,
-					emote,
-				});
+				await this.puppet.sendEdit(params, resource.native.skypeeditedid, sendMsg);
 			} else if (p.deletedMessages.has(resource.native.skypeeditedid)) {
 				log.silly("normal message redact dedupe");
 				return;
@@ -459,11 +468,7 @@ export class Skype {
 				await this.puppet.sendRedact(params, resource.native.skypeeditedid);
 			}
 		} else {
-			await this.puppet.sendMessage(params, {
-				body: msg,
-				formattedBody: msg,
-				emote,
-			});
+			await this.puppet.sendMessage(params, sendMsg);
 		}
 	}
 

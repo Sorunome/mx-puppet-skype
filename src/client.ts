@@ -45,9 +45,11 @@ export class Client extends EventEmitter {
 	}
 
 	public async connect() {
-		if (this.state) {
+		let connectedWithAuth = false;
+		if (this.state && false) {
 			try {
 				this.api = await skypeHttp.connect({ state: this.state, verbose: true });
+				connectedWithAuth = true;
 			} catch (err) {
 				this.api = await skypeHttp.connect({
 					credentials: {
@@ -56,6 +58,7 @@ export class Client extends EventEmitter {
 					},
 					verbose: true,
 				});
+				connectedWithAuth = false;
 			}
 		} else {
 			this.api = await skypeHttp.connect({
@@ -65,6 +68,7 @@ export class Client extends EventEmitter {
 				},
 				verbose: true,
 			});
+			connectedWithAuth = false;
 		}
 
 		this.api.on("event", (evt: skypeHttp.events.EventMessage) => {
@@ -109,21 +113,17 @@ export class Client extends EventEmitter {
 			this.emit("error", err);
 		});
 
+		const contacts = await this.api.getContacts();
+		for (const contact of contacts) {
+			this.contacts.set(contact.mri, contact);
+		}
+		const conversations = await this.api.getConversations();
+		for (const conversation of conversations) {
+			this.conversations.set(conversation.id, conversation);
+		}
+
 		await this.api.listen();
 		await this.api.setStatus("Online");
-
-		try {
-			const contacts = await this.api.getContacts();
-			for (const contact of contacts) {
-				this.contacts.set(contact.mri, contact);
-			}
-			const conversations = await this.api.getConversations();
-			for (const conversation of conversations) {
-				this.conversations.set(conversation.id, conversation);
-			}
-		} catch (err) {
-			log.error(err);
-		}
 	}
 
 	public async disconnect() {
