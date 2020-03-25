@@ -24,7 +24,7 @@ export class MatrixMessageParser {
 	}
 
 	private walkChildNodes(node: Parser.Node): string {
-		return node.childNodes.map((node) => this.walkNode(node)).join("");
+		return node.childNodes.map((n) => this.walkNode(n)).join("");
 	}
 
 	private escape(s: string): string {

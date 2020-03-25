@@ -20,13 +20,18 @@ import { Context as SkypeContext } from "skype-http/dist/lib/interfaces/api/cont
 
 const log = new Log("SkypePuppet:client");
 
+// tslint:disable no-magic-numbers
 const ID_TIMEOUT = 60000;
+const CONTACTS_DELTA_INTERVAL = 5 * 60 * 1000;
+// tslint:enable no-magic-numbers
 
 export class Client extends EventEmitter {
 	public contacts: Map<string, SkypeContact | null> = new Map();
 	public conversations: Map<string, skypeHttp.Conversation | null> = new Map();
 	private api: skypeHttp.Api;
 	private handledIds: ExpireSet<string>;
+	private lastContactsDate: Date = new Date();
+	private contactsInterval: NodeJS.Timeout | null = null;
 	constructor(
 		private loginUsername: string,
 		private password: string,
@@ -46,7 +51,7 @@ export class Client extends EventEmitter {
 
 	public async connect() {
 		let connectedWithAuth = false;
-		if (this.state && false) {
+		if (this.state) {
 			try {
 				this.api = await skypeHttp.connect({ state: this.state, verbose: true });
 				connectedWithAuth = true;
@@ -71,63 +76,52 @@ export class Client extends EventEmitter {
 			connectedWithAuth = false;
 		}
 
-		this.api.on("event", (evt: skypeHttp.events.EventMessage) => {
-			if (!evt || !evt.resource) {
-				return;
-			}
-			const resource = evt.resource;
-			if (this.handledIds.has(resource.id)) {
-				return;
-			}
-			this.handledIds.add(resource.id);
-			log.debug(`Got new event of type ${resource.type}`);
-			const [type, subtype] = resource.type.split("/");
-			switch (type) {
-				case "Text":
-					this.emit("text", resource);
-					break;
-				case "RichText":
-					if (subtype === "Location") {
-						this.emit("location", resource);
-					} else if (subtype) {
-						this.emit("file", resource);
-					} else {
-						this.emit("richText", resource);
-					}
-					break;
-				case "Control":
-					if (subtype === "Typing" || subtype === "ClearTyping") {
-						this.emit("typing", resource, subtype === "Typing");
-					}
-					break;
-				case "ThreadActivity":
-					if (subtype === "MemberConsumptionHorizonUpdate") {
-						this.emit("presence", resource);
-					}
-					break;
-			}
-		});
-
-		this.api.on("error", (err: Error) => {
-			log.error("An error occured", err);
-			this.emit("error", err);
-		});
-
-		const contacts = await this.api.getContacts();
-		for (const contact of contacts) {
-			this.contacts.set(contact.mri, contact);
-		}
-		const conversations = await this.api.getConversations();
-		for (const conversation of conversations) {
-			this.conversations.set(conversation.id, conversation);
-		}
+		await this.startupApi();
 
 		await this.api.listen();
 		await this.api.setStatus("Online");
+		if (connectedWithAuth) {
+			let resolved = false;
+			return new Promise((resolve, reject) => {
+				const TIMEOUT_SUCCESS = 5000;
+				setTimeout(() => {
+					if (resolved) {
+						return;
+					}
+					resolved = true;
+					resolve();
+				}, TIMEOUT_SUCCESS);
+				this.api.once("error", async () => {
+					if (resolved) {
+						return;
+					}
+					resolved = true;
+					// alright, re-try as normal user
+					try {
+						await this.api.stopListening();
+						this.api = await skypeHttp.connect({
+							credentials: {
+								username: this.loginUsername,
+								password: this.password,
+							},
+							verbose: true,
+						});
+						await this.startupApi();
+						resolve();
+					} catch (err) {
+						reject(err);
+					}
+				});
+			});
+		}
 	}
 
 	public async disconnect() {
 		await this.api.stopListening();
+		if (this.contactsInterval) {
+			clearInterval(this.contactsInterval);
+			this.contactsInterval = null;
+		}
 	}
 
 	public async getContact(id: string): Promise<SkypeContact | null> {
@@ -193,7 +187,7 @@ export class Client extends EventEmitter {
 	}
 
 	public async downloadFile(url: string): Promise<Buffer> {
-		if (!url.includes("/views/imgpsh_fullsize_anim")) {
+		if (!url.includes("/views/")) {
 			url = url + "/views/imgpsh_fullsize_anim";
 		}
 		return await Util.DownloadFile(url, {
@@ -237,5 +231,76 @@ export class Client extends EventEmitter {
 		opts: SkypeNewMediaMessage,
 	): Promise<skypeHttp.Api.SendMessageResult> {
 		return await this.api.sendImage(opts, conversationId);
+	}
+
+	private async startupApi() {
+		this.api.on("event", (evt: skypeHttp.events.EventMessage) => {
+			if (!evt || !evt.resource) {
+				return;
+			}
+			const resource = evt.resource;
+			log.debug(`Got new event of type ${resource.type}`);
+			log.silly(evt);
+			const [type, subtype] = resource.type.split("/");
+			switch (type) {
+				case "RichText":
+					if (evt.resourceType === "NewMessage") {
+						if (resource.native.skypeeditedid || this.handledIds.has(resource.id)) {
+							break;
+						}
+						this.handledIds.add(resource.id);
+						if (subtype === "Location") {
+							this.emit("location", resource);
+						} else if (subtype) {
+							this.emit("file", resource);
+						} else {
+							this.emit("text", resource);
+						}
+					} else if (evt.resourceType === "MessageUpdate") {
+						this.emit("edit", resource);
+					}
+					break;
+				case "Control":
+					if (subtype === "Typing" || subtype === "ClearTyping") {
+						this.emit("typing", resource, subtype === "Typing");
+					}
+					break;
+				case "ThreadActivity":
+					if (subtype === "MemberConsumptionHorizonUpdate") {
+						this.emit("presence", resource);
+					}
+					break;
+			}
+		});
+
+		this.api.on("error", (err: Error) => {
+			log.error("An error occured", err);
+			this.emit("error", err);
+		});
+
+		const contacts = await this.api.getContacts();
+		for (const contact of contacts) {
+			this.contacts.set(contact.mri, contact);
+		}
+		this.lastContactsDate = new Date();
+		const conversations = await this.api.getConversations();
+		for (const conversation of conversations) {
+			this.conversations.set(conversation.id, conversation);
+		}
+
+		if (this.contactsInterval) {
+			clearInterval(this.contactsInterval);
+			this.contactsInterval = null;
+		}
+		this.contactsInterval = setInterval(this.updateContacts.bind(this), CONTACTS_DELTA_INTERVAL);
+	}
+
+	private async updateContacts() {
+		const contacts = await this.api.getContacts(true);
+		for (const contact of contacts) {
+			this.contacts.set(contact.mri, contact);
+			this.emit("updateContact", contact);
+		}
+		this.lastContactsDate = new Date();
 	}
 }

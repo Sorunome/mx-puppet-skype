@@ -11,6 +11,7 @@
   },
   "author": "Sorunome",
   "dependencies": {
+    "cheerio": "^1.0.0-rc.3",
     "command-line-args": "^5.1.1",
     "command-line-usage": "^5.0.5",
     "decode-html": "^2.0.0",
@@ -18,8 +19,9 @@
     "events": "^3.0.0",
     "js-yaml": "^3.13.1",
     "mx-puppet-bridge": "0.0.35-1",
+    "node-emoji": "^1.10.0",
     "node-html-parser": "^1.2.13",
-    "skype-http": "git://github.com/Sorunome/skype-http#10555125f46307bbff93a8c4779889f4100669d2",
+    "skype-http": "git://github.com/Sorunome/skype-http#e8a92f8bc4929443bbba9755b6dd1ce90026bf4e",
     "tslint": "^5.17.0",
     "typescript": "^3.7.4"
   },

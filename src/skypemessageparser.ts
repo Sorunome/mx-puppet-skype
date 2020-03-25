@@ -15,6 +15,7 @@ import * as Parser from "node-html-parser";
 import * as decodeHtml from "decode-html";
 import * as escapeHtml from "escape-html";
 import { IMessageEvent } from "mx-puppet-bridge";
+import * as emoji from "node-emoji";
 
 export class SkypeMessageParser {
 	public parse(msg: string): IMessageEvent {
@@ -26,7 +27,13 @@ export class SkypeMessageParser {
 	}
 
 	private walkChildNodes(node: Parser.Node): IMessageEvent {
-		return node.childNodes.map((node) => this.walkNode(node)).reduce((acc, curr) => {
+		if (!node.childNodes.length) {
+			return {
+				body: "",
+				formattedBody: "",
+			};
+		}
+		return node.childNodes.map((n) => this.walkNode(n)).reduce((acc, curr) => {
 			return {
 				body: acc.body + curr.body,
 				formattedBody: acc.formattedBody! + curr.formattedBody!,
@@ -83,7 +90,82 @@ export class SkypeMessageParser {
 						formattedBody: `<a href="${escapeHtml(href)}">${child.formattedBody}</a>`,
 					};
 				}
+				case "ss": {
+					// skype emoji
+					const type = nodeHtml.attributes.type;
+					let emojiType = {
+						smile: "slightly_smiling_face",
+						sad: "slightly_frowning_face",
+						laugh: "grin",
+						cool: "sunglasses",
+						hearteyes: "heart_eyes",
+						stareyes: "star-struck",
+						like: "thumbsup",
+						cwl: "rolling_on_the_floor_laughing",
+						xd: "laughing",
+						happyface: "smiley",
+						happyeyes: "smile",
+						// hysterical: "", TODO: find
+						sweatgrinning: "sweat_smile",
+						// smileeyes: "", TODO: find
+						blankface: "no_mouth",
+						surprised: "astonished",
+						upsidedownface: "upside_down_face",
+						loudlycrying: "sob",
+						shivering: "🥶",
+						speechless: "😐️",
+						tongueout: "stuck_out_tongue",
+						winktongueout: "stuck_out_tongue_winking_eye",
+						inlove: "🥰",
+						// wonder: "", TODO: find
+						// dull: "", TODO: find
+						yawn: "🥱",
+						puke: "face_vomiting",
+						// doh: "", TODO: find
+						angryface: "angry",
+						angry: "rage",
+						// wasntme: "", TODO: find
+						// worry: "", TODO: find
+						screamingfear: "scream",
+						// veryconfused: "", TODO: find
+						// mmm: "", TODO: find
+						nerdy: "nerd_face",
+						loveearth: "🌍️",
+						// rainbowsmile: "", TODO: find
+						// lipssealed: "", TODO: find
+						devil: "smiling_imp",
+						// envy: "", TODO: find
+						// makeup: "", TODO: find
+						think: "thinking_face",
+						rofl: "rolling_on_the_floor_laughing",
+					}[type];
+					const haveEmojiType = Boolean(emojiType);
+					if (!emojiType) {
+						emojiType = type;
+					}
+					let e = emoji.get(emojiType);
+					if (e === `:${emojiType}:`) {
+						e = emoji.get(emojiType + "_face");
+					}
+					if (!e.startsWith(":")) {
+						return {
+							body: e,
+							formattedBody: e,
+						};
+					}
+					if (haveEmojiType) {
+						return {
+							body: emojiType,
+							formattedBody: emojiType,
+						};
+					}
+					return {
+						body: `(${type})`,
+						formattedBody: `(${escapeHtml(type)})`,
+					};
+				}
 				case "e_m":
+					// empty edit tag
 					return {
 						body: "",
 						formattedBody: "",

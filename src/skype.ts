@@ -23,6 +23,7 @@ import * as decodeHtml from "decode-html";
 import * as escapeHtml from "escape-html";
 import { MatrixMessageParser } from "./matrixmessageparser";
 import { SkypeMessageParser } from "./skypemessageparser";
+import * as cheerio from "cheerio";
 
 const log = new Log("SkypePuppet:skype");
 
@@ -104,7 +105,7 @@ export class Skype {
 		return {
 			user: this.getUserParams(puppetId, contact),
 			room: this.getRoomParams(puppetId, conversation),
-			eventId: (resource as any).clientId || resource.native.clientmessageid || resource.id, // tslint:disable-line no-any
+			eventId: resource.id, // tslint:disable-line no-any
 		};
 	}
 
@@ -125,16 +126,16 @@ export class Skype {
 		const client = p.client;
 		client.on("text", async (resource: skypeHttp.resources.TextResource) => {
 			try {
-				await this.handleSkypeText(puppetId, resource, false);
+				await this.handleSkypeText(puppetId, resource);
 			} catch (err) {
 				log.error("Error while handling text event", err);
 			}
 		});
-		client.on("richText", async (resource: skypeHttp.resources.RichTextResource) => {
+		client.on("edit", async (resource: skypeHttp.resources.RichTextResource) => {
 			try {
-				await this.handleSkypeText(puppetId, resource, true);
+				await this.handleSkypeEdit(puppetId, resource);
 			} catch (err) {
-				log.error("Error while handling richText event", err);
+				log.error("Error while handling edit event", err);
 			}
 		});
 		client.on("location", async (resource: skypeHttp.resources.RichTextLocationResource) => {
@@ -163,6 +164,14 @@ export class Skype {
 				await this.handleSkypePresence(puppetId, resource);
 			} catch (err) {
 				log.error("Error while handling presence event", err);
+			}
+		});
+		client.on("updateContact", async (contact: SkypeContact) => {
+			try {
+				const remoteUser = this.getUserParams(puppetId, contact);
+				await this.puppet.updateUser(remoteUser);
+			} catch (err) {
+				log.error("Error while handling updateContact event", err);
 			}
 		});
 		const MINUTE = 60000;
@@ -324,9 +333,8 @@ export class Skype {
 		const dedupeKey = `${room.puppetId};${room.roomId}`;
 		this.messageDeduplicator.lock(dedupeKey, p.client.username, msg);
 		const ret = await p.client.sendMessage(conversation.id, msg);
-		const dedupeId = ret && ret.clientMessageId;
 		const eventId = ret && ret.MessageId;
-		this.messageDeduplicator.unlock(dedupeKey, p.client.username, dedupeId);
+		this.messageDeduplicator.unlock(dedupeKey, p.client.username, eventId);
 		if (eventId) {
 			await this.puppet.eventSync.insert(room.puppetId, data.eventId!, eventId);
 		}
@@ -412,9 +420,8 @@ export class Skype {
 		const dedupeKey = `${room.puppetId};${room.roomId}`;
 		this.messageDeduplicator.lock(dedupeKey, p.client.username, `file:${data.filename}`);
 		const ret = await p.client[method](conversation.id, opts);
-		const dedupeId = ret && ret.clientMessageId;
 		const eventId = ret && ret.MessageId;
-		this.messageDeduplicator.unlock(dedupeKey, p.client.username, dedupeId);
+		this.messageDeduplicator.unlock(dedupeKey, p.client.username, eventId);
 		if (eventId) {
 			await this.puppet.eventSync.insert(room.puppetId, data.eventId!, eventId);
 		}
@@ -423,12 +430,12 @@ export class Skype {
 	private async handleSkypeText(
 		puppetId: number,
 		resource: skypeHttp.resources.TextResource | skypeHttp.resources.RichTextResource,
-		rich: boolean,
 	) {
 		const p = this.puppets[puppetId];
 		if (!p) {
 			return;
 		}
+		const rich = resource.native.messagetype.startsWith("RichText");
 		log.info("Got new skype message");
 		log.silly(resource);
 		const params = await this.getSendParams(puppetId, resource);
@@ -438,7 +445,66 @@ export class Skype {
 		}
 		let msg = resource.content;
 		let emote = false;
-		if (resource.native && resource.native.skypeemoteoffset) {
+		if (resource.native.skypeemoteoffset) {
+			emote = true;
+			msg = msg.substr(Number(resource.native.skypeemoteoffset));
+		}
+		const dedupeKey = `${puppetId};${params.room.roomId}`;
+		if (rich && msg.trim().startsWith("<URIObject") && msg.trim().endsWith("</URIObject>")) {
+			// okay, we might have a sticker or something...
+			const $ = cheerio.load(msg);
+			const obj = $("URIObject");
+			let uri = obj.attr("uri");
+			const filename = $(obj.find("OriginalName")).attr("v");
+			if (uri) {
+				if (await this.messageDeduplicator.dedupe(dedupeKey, params.user.userId, params.eventId, `file:${filename}`)) {
+					log.silly("file message dedupe");
+					return;
+				}
+				uri += "/views/thumblarge";
+				uri = uri.replace("static.asm.skype.com", "static-asm.secure.skypeassets.com");
+				const buffer = await p.client.downloadFile(uri);
+				await this.puppet.sendFileDetect(params, buffer, filename);
+				return;
+			}
+		}
+		if (await this.messageDeduplicator.dedupe(dedupeKey, params.user.userId, params.eventId, msg)) {
+			log.silly("normal message dedupe");
+			return;
+		}
+		let sendMsg: IMessageEvent;
+		if (rich) {
+			sendMsg = this.skypeMessageParser.parse(msg);
+		} else {
+			sendMsg = {
+				body: msg,
+			};
+		}
+		if (emote) {
+			sendMsg.emote = true;
+		}
+		await this.puppet.sendMessage(params, sendMsg);
+	}
+
+	private async handleSkypeEdit(
+		puppetId: number,
+		resource: skypeHttp.resources.TextResource | skypeHttp.resources.RichTextResource,
+	) {
+		const p = this.puppets[puppetId];
+		if (!p) {
+			return;
+		}
+		const rich = resource.native.messagetype.startsWith("RichText");
+		log.info("Got new skype edit");
+		log.silly(resource);
+		const params = await this.getSendParams(puppetId, resource);
+		if (!params) {
+			log.warn("Couldn't generate params");
+			return;
+		}
+		let msg = resource.content;
+		let emote = false;
+		if (resource.native.skypeemoteoffset) {
 			emote = true;
 			msg = msg.substr(Number(resource.native.skypeemoteoffset));
 		}
@@ -458,17 +524,13 @@ export class Skype {
 		if (emote) {
 			sendMsg.emote = true;
 		}
-		if (resource.native && resource.native.skypeeditedid) {
-			if (resource.content) {
-				await this.puppet.sendEdit(params, resource.native.skypeeditedid, sendMsg);
-			} else if (p.deletedMessages.has(resource.native.skypeeditedid)) {
-				log.silly("normal message redact dedupe");
-				return;
-			} else {
-				await this.puppet.sendRedact(params, resource.native.skypeeditedid);
-			}
+		if (resource.content) {
+			await this.puppet.sendEdit(params, resource.id, sendMsg);
+		} else if (p.deletedMessages.has(resource.id)) {
+			log.silly("normal message redact dedupe");
+			return;
 		} else {
-			await this.puppet.sendMessage(params, sendMsg);
+			await this.puppet.sendRedact(params, resource.id);
 		}
 	}
 
@@ -488,14 +550,6 @@ export class Skype {
 		const dedupeKey = `${puppetId};${params.room.roomId}`;
 		if (await this.messageDeduplicator.dedupe(dedupeKey, params.user.userId, params.eventId, `file:${filename}`)) {
 			log.silly("file message dedupe");
-			return;
-		}
-		if (resource.native && resource.native.skypeeditedid && !resource.uri) {
-			if (p.deletedMessages.has(resource.native.skypeeditedid)) {
-				log.silly("file message redact dedupe");
-				return;
-			}
-			await this.puppet.sendRedact(params, resource.native.skypeeditedid);
 			return;
 		}
 		const buffer = await p.client.downloadFile(resource.uri);
@@ -519,7 +573,7 @@ export class Skype {
 
 	private async handleSkypePresence(puppetId: number, resource: skypeHttp.resources.Resource) {
 		const p = this.puppets[puppetId];
-		if (!p || !resource.native) {
+		if (!p) {
 			return;
 		}
 		log.info("Got new skype presence event");
