@@ -166,10 +166,17 @@ export class Skype {
 				log.error("Error while handling presence event", err);
 			}
 		});
-		client.on("updateContact", async (contact: SkypeContact) => {
+		client.on("updateContact", async (oldContact: SkypeContact | null, newContact: SkypeContact) => {
 			try {
-				const remoteUser = this.getUserParams(puppetId, contact);
-				await this.puppet.updateUser(remoteUser);
+				let update = oldContact === null;
+				const newUser = this.getUserParams(puppetId, newContact);
+				if (oldContact) {
+					const oldUser = this.getUserParams(puppetId, oldContact);
+					update = oldUser.name !== newUser.name || oldUser.avatarUrl !== newUser.avatarUrl;
+				}
+				if (update) {
+					await this.puppet.updateUser(newUser);
+				}
 			} catch (err) {
 				log.error("Error while handling updateContact event", err);
 			}

@@ -30,7 +30,6 @@ export class Client extends EventEmitter {
 	public conversations: Map<string, skypeHttp.Conversation | null> = new Map();
 	private api: skypeHttp.Api;
 	private handledIds: ExpireSet<string>;
-	private lastContactsDate: Date = new Date();
 	private contactsInterval: NodeJS.Timeout | null = null;
 	constructor(
 		private loginUsername: string,
@@ -76,19 +75,40 @@ export class Client extends EventEmitter {
 			connectedWithAuth = false;
 		}
 
-		await this.startupApi();
+		try {
+			await this.startupApi();
+		} catch (err) {
+			if (!connectedWithAuth) {
+				throw err;
+			}
+			this.api = await skypeHttp.connect({
+				credentials: {
+					username: this.loginUsername,
+					password: this.password,
+				},
+				verbose: true,
+			});
+			connectedWithAuth = false;
+			await this.startupApi();
+		}
 
-		await this.api.listen();
-		await this.api.setStatus("Online");
+		const registerErrorHandler = () => {
+			this.api.on("error", (err: Error) => {
+				log.error("An error occured", err);
+				this.emit("error", err);
+			});
+		};
+
 		if (connectedWithAuth) {
 			let resolved = false;
-			return new Promise((resolve, reject) => {
+			return new Promise(async (resolve, reject) => {
 				const TIMEOUT_SUCCESS = 5000;
 				setTimeout(() => {
 					if (resolved) {
 						return;
 					}
 					resolved = true;
+					registerErrorHandler();
 					resolve();
 				}, TIMEOUT_SUCCESS);
 				this.api.once("error", async () => {
@@ -107,12 +127,20 @@ export class Client extends EventEmitter {
 							verbose: true,
 						});
 						await this.startupApi();
+						registerErrorHandler();
 						resolve();
 					} catch (err) {
 						reject(err);
 					}
 				});
+				await this.api.listen();
+			}).then(async () => {
+				await this.api.setStatus("Online");
 			});
+		} else {
+			registerErrorHandler();
+			await this.api.listen();
+			await this.api.setStatus("Online");
 		}
 	}
 
@@ -273,16 +301,10 @@ export class Client extends EventEmitter {
 			}
 		});
 
-		this.api.on("error", (err: Error) => {
-			log.error("An error occured", err);
-			this.emit("error", err);
-		});
-
 		const contacts = await this.api.getContacts();
 		for (const contact of contacts) {
 			this.contacts.set(contact.mri, contact);
 		}
-		this.lastContactsDate = new Date();
 		const conversations = await this.api.getConversations();
 		for (const conversation of conversations) {
 			this.conversations.set(conversation.id, conversation);
@@ -296,11 +318,17 @@ export class Client extends EventEmitter {
 	}
 
 	private async updateContacts() {
-		const contacts = await this.api.getContacts(true);
-		for (const contact of contacts) {
-			this.contacts.set(contact.mri, contact);
-			this.emit("updateContact", contact);
+		log.verbose("Getting contacts diff....");
+		try {
+			const contacts = await this.api.getContacts(true);
+			const MANY_CONTACTS = 5;
+			for (const contact of contacts) {
+				const oldContact = this.contacts.get(contact.mri) || null;
+				this.contacts.set(contact.mri, contact);
+				this.emit("updateContact", oldContact, contact);
+			}
+		} catch (err) {
+			log.error("Failed to get contacts diff", err);
 		}
-		this.lastContactsDate = new Date();
 	}
 }
