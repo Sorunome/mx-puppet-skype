@@ -126,7 +126,7 @@ async function run() {
 			data.state = client.getState;
 			await client.disconnect();
 		} catch (err) {
-			log.warn("Failed to log in as new user, perhaps the password is worng?", err);
+			log.verbose("Failed to log in as new user, perhaps the password is worng?", err);
 			retData.error = "Username or password wrong";
 			return retData;
 		}
