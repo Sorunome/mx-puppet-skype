@@ -19,6 +19,7 @@ import { Client } from "./client";
 import * as skypeHttp from "skype-http";
 import { Contact as SkypeContact } from "skype-http/dist/lib/types/contact";
 import { NewMediaMessage as SkypeNewMediaMessage } from "skype-http/dist/lib/interfaces/api/api";
+import { UnexpectedHttpStatusError } from "skype-http/dist/lib/errors";
 import * as decodeHtml from "decode-html";
 import * as escapeHtml from "escape-html";
 import { MatrixMessageParser } from "./matrixmessageparser";
@@ -183,12 +184,16 @@ export class Skype {
 		});
 		const MINUTE = 60000;
 		client.on("error", async (err: Error) => {
-			await this.puppet.sendStatusMessage(puppetId, "Error: " + err);
-			await this.puppet.sendStatusMessage(puppetId, "Reconnecting in a minute... ");
-			setTimeout(async () => {
+			log.error("Error when polling");
+			log.error(err);
+			if (err.name === "UnexpectedHttpStatus") {
+				await this.puppet.sendStatusMessage(puppetId, "Error: " + err);
+				await this.puppet.sendStatusMessage(puppetId, "Reconnecting in a minute... ");
 				await this.stopClient(puppetId);
-				await this.startClient(puppetId);
-			}, MINUTE);
+				setTimeout(async () => {
+					await this.startClient(puppetId);
+				}, MINUTE);
+			}
 		});
 		try {
 			await client.connect();
