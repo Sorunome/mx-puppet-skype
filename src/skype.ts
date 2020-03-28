@@ -186,7 +186,10 @@ export class Skype {
 		client.on("error", async (err: Error) => {
 			log.error("Error when polling");
 			log.error(err.name);
-			log.error(err.cause.name);
+			const errr = err as any;
+			if (errr.cause) {
+				log.error(errr.cause.name);
+			}
 			log.error(err.body);
 			log.error(err);
 			if (err.name === "UnexpectedHttpStatus") {
