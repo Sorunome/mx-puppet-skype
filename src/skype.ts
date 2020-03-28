@@ -185,6 +185,7 @@ export class Skype {
 		const MINUTE = 60000;
 		client.on("error", async (err: Error) => {
 			log.error("Error when polling");
+			log.error(err.name);
 			log.error(err);
 			if (err.name === "UnexpectedHttpStatus") {
 				await this.puppet.sendStatusMessage(puppetId, "Error: " + err);
@@ -193,6 +194,10 @@ export class Skype {
 				setTimeout(async () => {
 					await this.startClient(puppetId);
 				}, MINUTE);
+			} else {
+				log.error("baaaad error");
+				await this.puppet.sendStatusMessage(puppetId, "Super bad error, stopping puppet. Please restart the service to start it up again. This is for debugging purposes and will not be needed in the future");
+				await this.stopClient(puppetId);
 			}
 		});
 		try {
