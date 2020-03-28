@@ -185,13 +185,13 @@ export class Skype {
 		const MINUTE = 60000;
 		client.on("error", async (err: Error) => {
 			log.error("Error when polling");
-			log.error(err.name);
-			log.error(err.code);
+			log.error("name: ", err.name);
 			const errr = err as any;
 			if (errr.cause) {
-				log.error(errr.cause.name);
+				log.error("cause name: ", errr.cause.name);
 			}
-			log.error(errr.body);
+			log.error("code: ", errr.code);
+			log.error("body: ", errr.body);
 			log.error(err);
 			if (err.name === "UnexpectedHttpStatus") {
 				await this.puppet.sendStatusMessage(puppetId, "Error: " + err);
