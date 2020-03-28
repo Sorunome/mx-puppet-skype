@@ -186,6 +186,7 @@ export class Skype {
 		client.on("error", async (err: Error) => {
 			log.error("Error when polling");
 			log.error(err.name);
+			log.error(err.code);
 			const errr = err as any;
 			if (errr.cause) {
 				log.error(errr.cause.name);
