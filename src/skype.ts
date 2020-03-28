@@ -192,6 +192,8 @@ export class Skype {
 			}
 			log.error("code: ", errr.code);
 			log.error("body: ", errr.body);
+			log.error("cause: ", errr.cause);
+			log.error("data: ", errr.data);
 			log.error(err);
 			if (err.name === "UnexpectedHttpStatus") {
 				await this.puppet.sendStatusMessage(puppetId, "Error: " + err);
