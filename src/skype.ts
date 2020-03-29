@@ -184,6 +184,7 @@ export class Skype {
 		});
 		const MINUTE = 60000;
 		client.on("error", async (err: Error) => {
+			const causeName = (err as any).cause ? (err as any).cause.name : "";
 			log.error("Error when polling");
 			log.error("name: ", err.name);
 			const errr = err as any;
@@ -195,7 +196,7 @@ export class Skype {
 			log.error("cause: ", errr.cause);
 			log.error("data: ", errr.data);
 			log.error(err);
-			if (err.name === "UnexpectedHttpStatus") {
+			if (causeName === "UnexpectedHttpStatus") {
 				await this.puppet.sendStatusMessage(puppetId, "Error: " + err);
 				await this.puppet.sendStatusMessage(puppetId, "Reconnecting in a minute... ");
 				await this.stopClient(puppetId);
