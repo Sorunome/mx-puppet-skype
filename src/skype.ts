@@ -123,6 +123,7 @@ export class Skype {
 		if (!p) {
 			return;
 		}
+		await this.stopClient(puppetId);
 		p.client = new Client(p.data.username, p.data.password, p.data.state);
 		const client = p.client;
 		client.on("text", async (resource: skypeHttp.resources.TextResource) => {
