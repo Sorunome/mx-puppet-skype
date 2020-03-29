@@ -145,7 +145,9 @@ export class Client extends EventEmitter {
 	}
 
 	public async disconnect() {
-		await this.api.stopListening();
+		if (this.api) {
+			await this.api.stopListening();
+		}
 		if (this.contactsInterval) {
 			clearInterval(this.contactsInterval);
 			this.contactsInterval = null;
