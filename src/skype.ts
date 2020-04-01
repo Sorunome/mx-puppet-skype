@@ -13,7 +13,7 @@ limitations under the License.
 
 import {
 	PuppetBridge, IRemoteUser, IRemoteRoom, IReceiveParams, IMessageEvent, IFileEvent, Log, MessageDeduplicator, Util,
-	ExpireSet, IRetList,
+	IRetList,
 } from "mx-puppet-bridge";
 import { Client } from "./client";
 import * as skypeHttp from "skype-http";
@@ -25,6 +25,7 @@ import * as escapeHtml from "escape-html";
 import { MatrixMessageParser } from "./matrixmessageparser";
 import { SkypeMessageParser } from "./skypemessageparser";
 import * as cheerio from "cheerio";
+import ExpireSet from "expire-set";
 
 const log = new Log("SkypePuppet:skype");
 

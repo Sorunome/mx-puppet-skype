@@ -11,12 +11,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-import { Log, ExpireSet, IRemoteRoom, Util } from "mx-puppet-bridge";
+import { Log, IRemoteRoom, Util } from "mx-puppet-bridge";
 import { EventEmitter } from "events";
 import * as skypeHttp from "skype-http";
 import { Contact as SkypeContact } from "skype-http/dist/lib/types/contact";
 import { NewMediaMessage as SkypeNewMediaMessage } from "skype-http/dist/lib/interfaces/api/api";
 import { Context as SkypeContext } from "skype-http/dist/lib/interfaces/api/context";
+import ExpireSet from "expire-set";
 
 const log = new Log("SkypePuppet:client");
 
