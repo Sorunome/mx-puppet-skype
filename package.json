@@ -21,7 +21,7 @@
     "mx-puppet-bridge": "0.0.35-1",
     "node-emoji": "^1.10.0",
     "node-html-parser": "^1.2.13",
-    "skype-http": "git://github.com/Sorunome/skype-http#3ee89d05d3ff78d7adae17fcba544cdb9b2c8966",
+    "skype-http": "git://github.com/Sorunome/skype-http#8f1c71e7654ac5e04c31c552eff847f4ff63b8fa",
     "tslint": "^5.17.0",
     "typescript": "^3.7.4"
   },

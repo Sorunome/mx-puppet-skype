@@ -206,8 +206,11 @@ export class Skype {
 				}, MINUTE);
 			} else {
 				log.error("baaaad error");
-				await this.puppet.sendStatusMessage(puppetId, "Super bad error, stopping puppet. Please restart the service to start it up again. This is for debugging purposes and will not be needed in the future");
+				await this.puppet.sendStatusMessage(puppetId, "Super bad error, restarting in a minute. This is stupid. And will hopefully be fixed in the future.");
 				await this.stopClient(puppetId);
+				setTimeout(async () => {
+					await this.startClient(puppetId);
+				}, MINUTE);
 			}
 		});
 		try {

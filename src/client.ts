@@ -222,7 +222,10 @@ export class Client extends EventEmitter {
 		}
 		return await Util.DownloadFile(url, {
 			cookies: this.api.context.cookies,
-			headers: { Authorization: "skype_token " + this.api.context.skypeToken.value },
+			headers: {
+				Authorization: "skypetoken=" + this.api.context.skypeToken.value,
+				RegistrationToken: this.api.context.registrationToken.raw,
+			},
 		});
 	}
 
