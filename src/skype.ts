@@ -35,6 +35,7 @@ interface ISkypePuppet {
 	client: Client;
 	data: any;
 	deletedMessages: ExpireSet<string>;
+	restarting: boolean;
 }
 
 interface ISkypePuppets {
@@ -186,6 +187,10 @@ export class Skype {
 		});
 		const MINUTE = 60000;
 		client.on("error", async (err: Error) => {
+			if (p.restarting) {
+				return;
+			}
+			p.restarting = true;
 			const causeName = (err as any).cause ? (err as any).cause.name : "";
 			log.error("Error when polling");
 			log.error("name: ", err.name);
@@ -216,6 +221,7 @@ export class Skype {
 		});
 		try {
 			await client.connect();
+			p.restarting = false;
 			await this.puppet.setUserId(puppetId, client.username);
 			p.data.state = client.getState;
 			await this.puppet.setPuppetData(puppetId, p.data);
@@ -239,6 +245,7 @@ export class Skype {
 			client,
 			data,
 			deletedMessages: new ExpireSet(TWO_MIN),
+			restarting: false,
 		};
 		await this.startClient(puppetId);
 	}
