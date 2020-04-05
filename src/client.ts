@@ -335,6 +335,7 @@ export class Client extends EventEmitter {
 			}
 		} catch (err) {
 			log.error("Failed to get contacts diff", err);
+			this.emit("error", err);
 		}
 	}
 }
