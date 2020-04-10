@@ -222,7 +222,6 @@ export class Client extends EventEmitter {
 			url = url + "/views/imgpsh_fullsize_anim";
 		}
 		return await Util.DownloadFile(url, {
-			cookies: this.api.context.cookies,
 			headers: {
 				Authorization: "skypetoken=" + this.api.context.skypeToken.value,
 				RegistrationToken: this.api.context.registrationToken.raw,
