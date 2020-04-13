@@ -16,10 +16,10 @@ import {
 	IRetList,
 } from "mx-puppet-bridge";
 import { Client } from "./client";
-import * as skypeHttp from "skype-http";
-import { Contact as SkypeContact } from "skype-http/dist/lib/types/contact";
-import { NewMediaMessage as SkypeNewMediaMessage } from "skype-http/dist/lib/interfaces/api/api";
-import { UnexpectedHttpStatusError } from "skype-http/dist/lib/errors";
+import * as skypeHttp from "@sorunome/skype-http";
+import { Contact as SkypeContact } from "@sorunome/skype-http/dist/lib/types/contact";
+import { NewMediaMessage as SkypeNewMediaMessage } from "@sorunome/skype-http/dist/lib/interfaces/api/api";
+import { UnexpectedHttpStatusError } from "@sorunome/skype-http/dist/lib/errors";
 import * as decodeHtml from "decode-html";
 import * as escapeHtml from "escape-html";
 import { MatrixMessageParser } from "./matrixmessageparser";
@@ -228,7 +228,7 @@ export class Skype {
 			await this.puppet.setPuppetData(puppetId, p.data);
 			await this.puppet.sendStatusMessage(puppetId, "connected");
 		} catch (err) {
-			log.error("Failed to connect", err);
+			log.error("Failed to connect", err.body || err);
 			await this.puppet.sendStatusMessage(puppetId, "Failed to connect, reconnecting in a minute... " + err);
 			setTimeout(async () => {
 				await this.startClient(puppetId);
