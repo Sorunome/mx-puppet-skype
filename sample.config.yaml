@@ -3,7 +3,7 @@ bridge:
   # probably want 0.0.0.0 here
   bindAddress: localhost
   # Port to host the bridge on which your homeserver will connect to
-  port: 6000
+  port: 8438
   # Name of your homeserver
   domain: matrix.myhomeserver.com
   # URL where the bridge can connect to your homeserver
