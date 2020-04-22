@@ -156,10 +156,14 @@ export class Client extends EventEmitter {
 	}
 
 	public async getContact(id: string): Promise<SkypeContact | null> {
+		log.debug(`Fetching contact ${id}`);
 		const hasStart = Boolean(id.match(/^\d+:/));
 		const fullId = hasStart ? id : `8:${id}`;
 		if (this.contacts.has(fullId)) {
-			return this.contacts.get(fullId) || null;
+			log.debug("Returning cached result");
+			const ret = this.contacts.get(fullId) || null;
+			log.silly(ret);
+			return ret;
 		}
 		if (hasStart) {
 			id = id.substr(id.indexOf(":") + 1);
@@ -185,15 +189,19 @@ export class Client extends EventEmitter {
 				},
 			};
 			this.contacts.set(contact.mri, contact || null);
+			log.debug("Returning new result");
+			log.silly(contact);
 			return contact || null;
 		} catch (err) {
 			// contact not found
+			log.debug("No such contact found");
 			this.contacts.set(fullId, null);
 			return null;
 		}
 	}
 
 	public async getConversation(room: IRemoteRoom): Promise<skypeHttp.Conversation | null> {
+		log.debug(`Fetching conversation puppetId=${room.puppetId} roomId=${room.roomId}`);
 		let id = room.roomId;
 		const match = id.match(/^dm-\d+-/);
 		if (match) {
@@ -204,14 +212,20 @@ export class Client extends EventEmitter {
 			id = id.substr(match[0].length);
 		}
 		if (this.conversations.has(id)) {
-			return this.conversations.get(id) || null;
+			log.debug("Returning cached result");
+			const ret = this.conversations.get(id) || null;
+			log.silly(ret);
+			return ret;
 		}
 		try {
 			const conversation = await this.api.getConversation(id);
 			this.conversations.set(conversation.id, conversation || null);
+			log.debug("Returning new result");
+			log.silly(conversation);
 			return conversation || null;
 		} catch (err) {
 			// conversation not found
+			log.debug("No such conversation found");
 			this.conversations.set(id, null);
 			return null;
 		}
