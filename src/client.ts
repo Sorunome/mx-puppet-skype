@@ -195,6 +195,7 @@ export class Client extends EventEmitter {
 		} catch (err) {
 			// contact not found
 			log.debug("No such contact found");
+			log.debug(err.body || err);
 			this.contacts.set(fullId, null);
 			return null;
 		}
@@ -226,6 +227,7 @@ export class Client extends EventEmitter {
 		} catch (err) {
 			// conversation not found
 			log.debug("No such conversation found");
+			log.debug(err.body || err);
 			this.conversations.set(id, null);
 			return null;
 		}
