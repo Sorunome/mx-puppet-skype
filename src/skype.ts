@@ -105,11 +105,10 @@ export class Skype {
 		if (!contact || !conversation) {
 			return null;
 		}
-		const room = this.getRoomParams(puppetId, conversation);
 		return {
 			user: this.getUserParams(puppetId, contact),
-			room,
-			eventId: `${resource.id};${room.roomId}`,
+			room: this.getRoomParams(puppetId, conversation),
+			eventId: resource.id, // tslint:disable-line no-any
 		};
 	}
 
@@ -379,7 +378,7 @@ export class Skype {
 		const eventId = ret && ret.MessageId;
 		this.messageDeduplicator.unlock(dedupeKey, p.client.username, eventId);
 		if (eventId) {
-			await this.puppet.eventSync.insert(room.puppetId, data.eventId!, `${eventId};${room.roomId}`);
+			await this.puppet.eventSync.insert(room.puppetId, data.eventId!, eventId);
 		}
 	}
 
@@ -402,11 +401,11 @@ export class Skype {
 		}
 		const dedupeKey = `${room.puppetId};${room.roomId}`;
 		this.messageDeduplicator.lock(dedupeKey, p.client.username, msg);
-		await p.client.sendEdit(conversation.id, eventId.split(";")[0], msg);
+		await p.client.sendEdit(conversation.id, eventId, msg);
 		const newEventId = "";
 		this.messageDeduplicator.unlock(dedupeKey, p.client.username, newEventId);
 		if (newEventId) {
-			await this.puppet.eventSync.insert(room.puppetId, data.eventId!, `${newEventId};${room.roomId}`);
+			await this.puppet.eventSync.insert(room.puppetId, data.eventId!, newEventId);
 		}
 	}
 
@@ -432,7 +431,7 @@ export class Skype {
 		const ownContact = await p.client.getContact(p.client.username);
 		const authorname = escapeHtml(ownContact ? ownContact.displayName : p.client.username);
 		const conversationId = escapeHtml(conversation.id);
-		const timestamp = Math.round(Number(eventId.split(";")[0]) / 1000).toString();
+		const timestamp = Math.round(Number(eventId) / 1000).toString();
 		const origEventId = (await this.puppet.eventSync.getMatrix(room.puppetId, eventId))[0];
 		let contents = "blah";
 		if (origEventId) {
@@ -452,7 +451,7 @@ export class Skype {
 			}
 		}
 		const quote = `<quote author="${author}" authorname="${authorname}" timestamp="${timestamp}" ` +
-			`conversation="${conversationId}" messageid="${escapeHtml(eventId.split(";")[0])}">` +
+			`conversation="${conversationId}" messageid="${escapeHtml(eventId)}">` +
 			`<legacyquote>[${timestamp}] ${authorname}: </legacyquote>${contents}<legacyquote>
 
 &lt;&lt;&lt; </legacyquote></quote>`;
@@ -463,7 +462,7 @@ export class Skype {
 		const newEventId = ret && ret.MessageId;
 		this.messageDeduplicator.unlock(dedupeKey, p.client.username, newEventId);
 		if (newEventId) {
-			await this.puppet.eventSync.insert(room.puppetId, data.eventId!, `${newEventId};${room.roomId}`);
+			await this.puppet.eventSync.insert(room.puppetId, data.eventId!, newEventId);
 		}
 	}
 
@@ -479,7 +478,7 @@ export class Skype {
 			return;
 		}
 		p.deletedMessages.add(eventId);
-		await p.client.sendDelete(conversation.id, eventId.split(";")[0]);
+		await p.client.sendDelete(conversation.id, eventId);
 	}
 
 	public async handleMatrixImage(room: IRemoteRoom, data: IFileEvent) {
@@ -523,7 +522,7 @@ export class Skype {
 		const eventId = ret && ret.MessageId;
 		this.messageDeduplicator.unlock(dedupeKey, p.client.username, eventId);
 		if (eventId) {
-			await this.puppet.eventSync.insert(room.puppetId, data.eventId!, `${eventId};${room.roomId}`);
+			await this.puppet.eventSync.insert(room.puppetId, data.eventId!, eventId);
 		}
 	}
 
@@ -579,7 +578,7 @@ export class Skype {
 			const messageid = quote.attr("messageid");
 			if (messageid) {
 				const sendQuoteMsg = this.skypeMessageParser.parse(msg, { noQuotes: true });
-				await this.puppet.sendReply(params, `${messageid};${params.room.roomId}`, sendQuoteMsg);
+				await this.puppet.sendReply(params, messageid, sendQuoteMsg);
 				return;
 			}
 		}
@@ -636,12 +635,12 @@ export class Skype {
 			sendMsg.emote = true;
 		}
 		if (resource.content) {
-			await this.puppet.sendEdit(params, `${resource.id};${params.room.roomId}`, sendMsg);
-		} else if (p.deletedMessages.has(`${resource.id};${params.room.roomId}`)) {
+			await this.puppet.sendEdit(params, resource.id, sendMsg);
+		} else if (p.deletedMessages.has(resource.id)) {
 			log.silly("normal message redact dedupe");
 			return;
 		} else {
-			await this.puppet.sendRedact(params, `${resource.id};${params.room.roomId}`);
+			await this.puppet.sendRedact(params, resource.id);
 		}
 	}
 
