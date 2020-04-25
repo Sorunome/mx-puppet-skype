@@ -52,8 +52,12 @@ export class MatrixMessageParser {
 					const inner = this.walkChildNodes(nodeHtml);
 					return `<a href="${escapeHtml(href)}">${inner}</a>`;
 				}
+				case "blockquote":
+					return `<quote>${this.walkChildNodes(nodeHtml)}</quote>`;
 				case "wrap":
 					return this.walkChildNodes(nodeHtml);
+				case "mx-reply": // disgard replies
+					return "";
 				default:
 					if (!nodeHtml.tagName) {
 						return this.walkChildNodes(nodeHtml);

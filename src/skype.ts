@@ -409,6 +409,63 @@ export class Skype {
 		}
 	}
 
+	public async handleMatrixReply(room: IRemoteRoom, eventId: string, data: IMessageEvent) {
+		const p = this.puppets[room.puppetId];
+		if (!p) {
+			return;
+		}
+		log.info("Received reply from matrix");
+		const conversation = await p.client.getConversation(room);
+		if (!conversation) {
+			log.warn(`Room ${room.roomId} not found!`);
+			return;
+		}
+		let msg: string;
+		if (data.formattedBody) {
+			msg = this.matrixMessageParser.parse(data.formattedBody);
+		} else {
+			msg = escapeHtml(data.body);
+		}
+		// now prepend the reply
+		const author = escapeHtml(p.client.username.substr(p.client.username.indexOf(":") + 1));
+		const ownContact = await p.client.getContact(p.client.username);
+		const authorname = escapeHtml(ownContact ? ownContact.displayName : p.client.username);
+		const conversationId = escapeHtml(conversation.id);
+		const timestamp = Math.round(Number(eventId) / 1000).toString();
+		const origEventId = (await this.puppet.eventSync.getMatrix(room.puppetId, eventId))[0];
+		let contents = "blah";
+		if (origEventId) {
+			const [realOrigEventId, roomId] = origEventId.split(";");
+			try {
+				const client = (await this.puppet.roomSync.getRoomOp(roomId)) || this.puppet.botIntent.underlyingClient;
+				const evt = await client.getEvent(roomId, realOrigEventId);
+				if (evt && evt.content && typeof evt.content.body === "string") {
+					if (evt.content.formatted_body) {
+						contents = this.matrixMessageParser.parse(evt.content.formatted_body);
+					} else {
+						contents = escapeHtml(evt.content.body);
+					}
+				}
+			} catch (err) {
+				log.verbose("Event not found", err.body || err);
+			}
+		}
+		const quote = `<quote author="${author}" authorname="${authorname}" timestamp="${timestamp}" ` +
+			`conversation="${conversationId}" messageid="${escapeHtml(eventId)}">` +
+			`<legacyquote>[${timestamp}] ${authorname}: </legacyquote>${contents}<legacyquote>
+
+&lt;&lt;&lt; </legacyquote></quote>`;
+		msg = quote + msg;
+		const dedupeKey = `${room.puppetId};${room.roomId}`;
+		this.messageDeduplicator.lock(dedupeKey, p.client.username, msg);
+		const ret = await p.client.sendMessage(conversation.id, msg);
+		const newEventId = ret && ret.MessageId;
+		this.messageDeduplicator.unlock(dedupeKey, p.client.username, newEventId);
+		if (newEventId) {
+			await this.puppet.eventSync.insert(room.puppetId, data.eventId!, newEventId);
+		}
+	}
+
 	public async handleMatrixRedact(room: IRemoteRoom, eventId: string) {
 		const p = this.puppets[room.puppetId];
 		if (!p) {
@@ -514,6 +571,17 @@ export class Skype {
 			log.silly("normal message dedupe");
 			return;
 		}
+		if (rich && msg.trim().startsWith("<quote")) {
+			// okay, we might have a reply...
+			const $ = cheerio.load(msg);
+			const quote = $("quote");
+			const messageid = quote.attr("messageid");
+			if (messageid) {
+				const sendQuoteMsg = this.skypeMessageParser.parse(msg, { noQuotes: true });
+				await this.puppet.sendReply(params, messageid, sendQuoteMsg);
+				return;
+			}
+		}
 		let sendMsg: IMessageEvent;
 		if (rich) {
 			sendMsg = this.skypeMessageParser.parse(msg);
@@ -557,7 +625,7 @@ export class Skype {
 		}
 		let sendMsg: IMessageEvent;
 		if (rich) {
-			sendMsg = this.skypeMessageParser.parse(msg);
+			sendMsg = this.skypeMessageParser.parse(msg, { noQuotes: msg.trim().startsWith("<quote") });
 		} else {
 			sendMsg = {
 				body: msg,

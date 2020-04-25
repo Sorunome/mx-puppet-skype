@@ -17,23 +17,30 @@ import * as escapeHtml from "escape-html";
 import { IMessageEvent } from "mx-puppet-bridge";
 import * as emoji from "node-emoji";
 
+interface ISkypeMessageParserOpts {
+	noQuotes?: boolean;
+}
+
 export class SkypeMessageParser {
-	public parse(msg: string): IMessageEvent {
+	public parse(msg: string, opts: ISkypeMessageParserOpts = {}): IMessageEvent {
+		opts = Object.assign({
+			noQuotes: false,
+		}, opts);
 		const nodes = Parser.parse(`<wrap>${msg}</wrap>`, {
 			lowerCaseTagName: true,
 			pre: true,
 		});
-		return this.walkNode(nodes);
+		return this.walkNode(nodes, opts);
 	}
 
-	private walkChildNodes(node: Parser.Node): IMessageEvent {
+	private walkChildNodes(node: Parser.Node, opts: ISkypeMessageParserOpts): IMessageEvent {
 		if (!node.childNodes.length) {
 			return {
 				body: "",
 				formattedBody: "",
 			};
 		}
-		return node.childNodes.map((n) => this.walkNode(n)).reduce((acc, curr) => {
+		return node.childNodes.map((n) => this.walkNode(n, opts)).reduce((acc, curr) => {
 			return {
 				body: acc.body + curr.body,
 				formattedBody: acc.formattedBody! + curr.formattedBody!,
@@ -48,35 +55,35 @@ export class SkypeMessageParser {
 		};
 	}
 
-	private walkNode(node: Parser.Node): IMessageEvent {
+	private walkNode(node: Parser.Node, opts: ISkypeMessageParserOpts): IMessageEvent {
 		if (node.nodeType === Parser.NodeType.TEXT_NODE) {
 			return this.escape((node as Parser.TextNode).text);
 		} else if (node.nodeType === Parser.NodeType.ELEMENT_NODE) {
 			const nodeHtml = node as Parser.HTMLElement;
 			switch (nodeHtml.tagName) {
 				case "i": {
-					const child = this.walkChildNodes(nodeHtml);
+					const child = this.walkChildNodes(nodeHtml, opts);
 					return {
 						body: `_${child.body}_`,
 						formattedBody: `<em>${child.formattedBody}</em>`,
 					};
 				}
 				case "b": {
-					const child = this.walkChildNodes(nodeHtml);
+					const child = this.walkChildNodes(nodeHtml, opts);
 					return {
 						body: `*${child.body}*`,
 						formattedBody: `<strong>${child.formattedBody}</strong>`,
 					};
 				}
 				case "s": {
-					const child = this.walkChildNodes(nodeHtml);
+					const child = this.walkChildNodes(nodeHtml, opts);
 					return {
 						body: `~${child.body}~`,
 						formattedBody: `<del>${child.formattedBody}</del>`,
 					};
 				}
 				case "pre": {
-					const child = this.walkChildNodes(nodeHtml);
+					const child = this.walkChildNodes(nodeHtml, opts);
 					return {
 						body: `{code}${child.body}{code}`,
 						formattedBody: `<code>${child.formattedBody}</code>`,
@@ -84,10 +91,23 @@ export class SkypeMessageParser {
 				}
 				case "a": {
 					const href = nodeHtml.attributes.href;
-					const child = this.walkChildNodes(nodeHtml);
+					const child = this.walkChildNodes(nodeHtml, opts);
 					return {
 						body: child.body === href ? href : `[${child.body}](${href})`,
 						formattedBody: `<a href="${escapeHtml(href)}">${child.formattedBody}</a>`,
+					};
+				}
+				case "quote": {
+					if (opts.noQuotes) {
+						return {
+							body: "",
+							formattedBody: "",
+						};
+					}
+					const child = this.walkChildNodes(nodeHtml, opts);
+					return {
+						body: `> ${child.body}\n`,
+						formattedBody: `<blockquote>${child.formattedBody}<br> - ${nodeHtml.attributes.authorname}</blockquote>`,
 					};
 				}
 				case "ss": {
@@ -164,14 +184,14 @@ export class SkypeMessageParser {
 						formattedBody: `(${escapeHtml(type)})`,
 					};
 				}
-				case "e_m":
-					// empty edit tag
+				case "e_m": // empty edit tag
+				case "legacyquote": // empty legacy quote tag
 					return {
 						body: "",
 						formattedBody: "",
 					};
 				default:
-					return this.walkChildNodes(nodeHtml);
+					return this.walkChildNodes(nodeHtml, opts);
 			}
 		}
 		return {
