@@ -20,7 +20,7 @@
     "events": "^3.0.0",
     "expire-set": "^1.0.0",
     "js-yaml": "^3.13.1",
-    "mx-puppet-bridge": "0.0.38-1",
+    "mx-puppet-bridge": "0.0.39",
     "node-emoji": "^1.10.0",
     "node-html-parser": "^1.2.13",
     "tslint": "^5.17.0",

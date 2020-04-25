@@ -378,7 +378,7 @@ export class Skype {
 		const eventId = ret && ret.MessageId;
 		this.messageDeduplicator.unlock(dedupeKey, p.client.username, eventId);
 		if (eventId) {
-			await this.puppet.eventSync.insert(room.puppetId, data.eventId!, eventId);
+			await this.puppet.eventSync.insert(room, data.eventId!, eventId);
 		}
 	}
 
@@ -405,7 +405,7 @@ export class Skype {
 		const newEventId = "";
 		this.messageDeduplicator.unlock(dedupeKey, p.client.username, newEventId);
 		if (newEventId) {
-			await this.puppet.eventSync.insert(room.puppetId, data.eventId!, newEventId);
+			await this.puppet.eventSync.insert(room, data.eventId!, newEventId);
 		}
 	}
 
@@ -432,22 +432,24 @@ export class Skype {
 		const authorname = escapeHtml(ownContact ? ownContact.displayName : p.client.username);
 		const conversationId = escapeHtml(conversation.id);
 		const timestamp = Math.round(Number(eventId) / 1000).toString();
-		const origEventId = (await this.puppet.eventSync.getMatrix(room.puppetId, eventId))[0];
+		const origEventId = (await this.puppet.eventSync.getMatrix(room, eventId))[0];
 		let contents = "blah";
 		if (origEventId) {
-			const [realOrigEventId, roomId] = origEventId.split(";");
-			try {
-				const client = (await this.puppet.roomSync.getRoomOp(roomId)) || this.puppet.botIntent.underlyingClient;
-				const evt = await client.getEvent(roomId, realOrigEventId);
-				if (evt && evt.content && typeof evt.content.body === "string") {
-					if (evt.content.formatted_body) {
-						contents = this.matrixMessageParser.parse(evt.content.formatted_body);
-					} else {
-						contents = escapeHtml(evt.content.body);
+			const roomId = await this.puppet.roomSync.maybeGetMxid(room);
+			if (roomId) {
+				try {
+					const client = (await this.puppet.roomSync.getRoomOp(roomId)) || this.puppet.botIntent.underlyingClient;
+					const evt = await client.getEvent(roomId, origEventId);
+					if (evt && evt.content && typeof evt.content.body === "string") {
+						if (evt.content.formatted_body) {
+							contents = this.matrixMessageParser.parse(evt.content.formatted_body);
+						} else {
+							contents = escapeHtml(evt.content.body);
+						}
 					}
+				} catch (err) {
+					log.verbose("Event not found", err.body || err);
 				}
-			} catch (err) {
-				log.verbose("Event not found", err.body || err);
 			}
 		}
 		const quote = `<quote author="${author}" authorname="${authorname}" timestamp="${timestamp}" ` +
@@ -462,7 +464,7 @@ export class Skype {
 		const newEventId = ret && ret.MessageId;
 		this.messageDeduplicator.unlock(dedupeKey, p.client.username, newEventId);
 		if (newEventId) {
-			await this.puppet.eventSync.insert(room.puppetId, data.eventId!, newEventId);
+			await this.puppet.eventSync.insert(room, data.eventId!, newEventId);
 		}
 	}
 
@@ -522,7 +524,7 @@ export class Skype {
 		const eventId = ret && ret.MessageId;
 		this.messageDeduplicator.unlock(dedupeKey, p.client.username, eventId);
 		if (eventId) {
-			await this.puppet.eventSync.insert(room.puppetId, data.eventId!, eventId);
+			await this.puppet.eventSync.insert(room, data.eventId!, eventId);
 		}
 	}
 
