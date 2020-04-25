@@ -208,6 +208,7 @@ export class Skype {
 				await this.puppet.sendStatusMessage(puppetId, "Error: " + err);
 				await this.puppet.sendStatusMessage(puppetId, "Reconnecting in a minute... ");
 				await this.stopClient(puppetId);
+				p.data.state = undefined; // delete the sate so that we re-login for sure
 				setTimeout(async () => {
 					await this.startClient(puppetId);
 				}, MINUTE);
@@ -215,6 +216,7 @@ export class Skype {
 				log.error("baaaad error");
 				await this.puppet.sendStatusMessage(puppetId, "Super bad error, restarting in a minute. This is stupid. And will hopefully be fixed in the future.");
 				await this.stopClient(puppetId);
+				p.data.state = undefined; // delete the sate so that we re-login for sure
 				setTimeout(async () => {
 					await this.startClient(puppetId);
 				}, MINUTE);
