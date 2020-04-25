@@ -229,6 +229,7 @@ export class Skype {
 			await this.puppet.sendStatusMessage(puppetId, "connected");
 		} catch (err) {
 			log.error("Failed to connect", err.body || err);
+			p.data.state = undefined; // delete the sate so that we re-login for sure
 			await this.puppet.sendStatusMessage(puppetId, "Failed to connect, reconnecting in a minute... " + err);
 			setTimeout(async () => {
 				await this.startClient(puppetId);
