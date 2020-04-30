@@ -51,7 +51,7 @@ export class SkypeMessageParser {
 	private escape(s: string): IMessageEvent {
 		return {
 			body: decodeHtml(s),
-			formattedBody: s.replace("\n", "<br>"),
+			formattedBody: s.replace(/\n/g, "<br>"),
 		};
 	}
 

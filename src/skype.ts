@@ -13,7 +13,7 @@ limitations under the License.
 
 import {
 	PuppetBridge, IRemoteUser, IRemoteRoom, IReceiveParams, IMessageEvent, IFileEvent, Log, MessageDeduplicator, Util,
-	IRetList,
+	IRetList, IReplyEvent,
 } from "mx-puppet-bridge";
 import { Client } from "./client";
 import * as skypeHttp from "@sorunome/skype-http";
@@ -409,11 +409,13 @@ export class Skype {
 		}
 	}
 
-	public async handleMatrixReply(room: IRemoteRoom, eventId: string, data: IMessageEvent) {
+	public async handleMatrixReply(room: IRemoteRoom, eventId: string, data: IReplyEvent) {
 		const p = this.puppets[room.puppetId];
 		if (!p) {
 			return;
 		}
+		console.log("===================");
+		console.log(data);
 		log.info("Received reply from matrix");
 		const conversation = await p.client.getConversation(room);
 		if (!conversation) {
@@ -427,30 +429,23 @@ export class Skype {
 			msg = escapeHtml(data.body);
 		}
 		// now prepend the reply
-		const author = escapeHtml(p.client.username.substr(p.client.username.indexOf(":") + 1));
+		const reply = data.reply;
+		const authorRawId = reply.user.user ? reply.user.user.userId : p.client.username;
+		const author = escapeHtml(authorRawId.substr(authorRawId.indexOf(":") + 1));
 		const ownContact = await p.client.getContact(p.client.username);
-		const authorname = escapeHtml(ownContact ? ownContact.displayName : p.client.username);
+		const authorname = escapeHtml(reply.user.displayname);
 		const conversationId = escapeHtml(conversation.id);
 		const timestamp = Math.round(Number(eventId) / 1000).toString();
 		const origEventId = (await this.puppet.eventSync.getMatrix(room, eventId))[0];
-		let contents = "blah";
-		if (origEventId) {
-			const roomId = await this.puppet.roomSync.maybeGetMxid(room);
-			if (roomId) {
-				try {
-					const client = (await this.puppet.roomSync.getRoomOp(roomId)) || this.puppet.botIntent.underlyingClient;
-					const evt = await client.getEvent(roomId, origEventId);
-					if (evt && evt.content && typeof evt.content.body === "string") {
-						if (evt.content.formatted_body) {
-							contents = this.matrixMessageParser.parse(evt.content.formatted_body);
-						} else {
-							contents = escapeHtml(evt.content.body);
-						}
-					}
-				} catch (err) {
-					log.verbose("Event not found", err.body || err);
-				}
+		let contents = "";
+		if (reply.message) {
+			if (reply.message.formattedBody) {
+				contents = this.matrixMessageParser.parse(reply.message.formattedBody);
+			} else {
+				contents = escapeHtml(reply.message.body);
 			}
+		} else if (reply.file) {
+			contents = `${reply.file.filename}: ${reply.file.url}`;
 		}
 		const quote = `<quote author="${author}" authorname="${authorname}" timestamp="${timestamp}" ` +
 			`conversation="${conversationId}" messageid="${escapeHtml(eventId)}">` +
