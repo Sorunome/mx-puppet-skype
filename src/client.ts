@@ -3,7 +3,7 @@ Copyright 2020 mx-puppet-skype
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -18,6 +18,7 @@ import { Contact as SkypeContact } from "@sorunome/skype-http/dist/lib/types/con
 import { NewMediaMessage as SkypeNewMediaMessage } from "@sorunome/skype-http/dist/lib/interfaces/api/api";
 import { Context as SkypeContext } from "@sorunome/skype-http/dist/lib/interfaces/api/context";
 import ExpireSet from "expire-set";
+import * as toughCookie from "tough-cookie";
 
 const log = new Log("SkypePuppet:client");
 
@@ -231,14 +232,39 @@ export class Client extends EventEmitter {
 		}
 	}
 
-	public async downloadFile(url: string): Promise<Buffer> {
-		if (!url.includes("/views/")) {
-			url = url + "/views/imgpsh_fullsize_anim";
+	public async downloadFile(url: string, type: string = "imgpsh_fullsize_anim"): Promise<Buffer> {
+		if (url.startsWith("https://api.asm.skype.com/") && !url.includes("/views/")) {
+			url = `${url}/views/${type}`;
 		}
+		const cookieJar = new toughCookie.CookieJar(this.api.context.cookies);
 		return await Util.DownloadFile(url, {
 			headers: {
 				Authorization: "skypetoken=" + this.api.context.skypeToken.value,
 				RegistrationToken: this.api.context.registrationToken.raw,
+			},
+			cookieJar: {
+				setCookie: async (rawCookie: string, cookieUrl: string) =>
+					new Promise((resolve, reject) =>
+						cookieJar.setCookie(rawCookie, cookieUrl, (err, value) =>
+							err ? reject(err) : resolve(value),
+						),
+					),
+				getCookieString: async (cookieUrl: string) =>
+					new Promise((resolve, reject) =>
+						cookieJar.getCookieString(cookieUrl, (err, value) => {
+							if (err) {
+								reject(err);
+								return;
+							}
+							if (url.startsWith("https://api.asm.skype.com/")) {
+								if (value) {
+									value += "; ";
+								}
+								value += "skypetoken_asm=" + encodeURIComponent(this.api.context.skypeToken.value);
+							}
+							resolve(value);
+						}),
+					),
 			},
 		});
 	}

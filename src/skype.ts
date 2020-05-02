@@ -86,11 +86,15 @@ export class Skype {
 				avatarUrl = picture.slice("URL@".length);
 			}
 		}
+		const p = this.puppets[puppetId];
 		return {
 			puppetId,
 			roomId: conversation.id,
 			name,
 			avatarUrl,
+			downloadFile: async (url: string): Promise<Buffer> => {
+				return await p.client.downloadFile(url, "swx_avatar");
+			},
 		};
 	}
 
@@ -414,8 +418,6 @@ export class Skype {
 		if (!p) {
 			return;
 		}
-		console.log("===================");
-		console.log(data);
 		log.info("Received reply from matrix");
 		const conversation = await p.client.getConversation(room);
 		if (!conversation) {
