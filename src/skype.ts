@@ -192,7 +192,7 @@ export class Skype {
 		const MINUTE = 60000;
 		client.on("error", async (err: Error) => {
 			if (p.restarting) {
-				await this.puppet.sendStatusMessage(puppetId, "Got an error, but am already restrting, ignoring....");
+				await this.puppet.sendStatusMessage(puppetId, "Got an error, but am already restarting, ignoring....");
 				return;
 			}
 			p.restarting = true;
