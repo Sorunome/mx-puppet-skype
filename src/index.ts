@@ -117,7 +117,7 @@ async function run() {
 		const retData = {
 			success: false,
 		} as IRetData;
-		const [username, password] = str.split(" ");
+		const [username, password] = str.split(/ (.+)/, 2);
 		const data: any = {
 			username,
 			password,
