@@ -46,7 +46,7 @@ if (options.help) {
 	console.log(commandLineUsage([
 		{
 			header: "Matrix Skype Puppet Bridge",
-			content: "A matrix puppet bridge for skype",
+			content: "A matrix puppet bridge for Skype",
 		},
 		{
 			header: "Options",
@@ -117,7 +117,8 @@ async function run() {
 		const retData = {
 			success: false,
 		} as IRetData;
-		const [username, password] = str.split(/ (.+)/, 2);
+		const TOKENS_TO_EXTRACT = 2;
+		const [username, password] = str.split(/ (.+)/, TOKENS_TO_EXTRACT);
 		const data: any = {
 			username,
 			password,
@@ -128,7 +129,7 @@ async function run() {
 			data.state = client.getState;
 			await client.disconnect();
 		} catch (err) {
-			log.verbose("Failed to log in as new user, perhaps the password is worng?");
+			log.verbose("Failed to log in as new user, perhaps the password is wrong?");
 			log.silly(err);
 			retData.error = "Username or password wrong";
 			return retData;
