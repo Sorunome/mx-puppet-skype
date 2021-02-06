@@ -238,7 +238,7 @@ export class Client extends EventEmitter {
 		}
 		const cookieJar = new toughCookie.CookieJar(this.api.context.cookies);
 		return await Util.DownloadFile(url, {
-                        responseType: "buffer",
+			responseType: "buffer",
 			headers: {
 				Authorization: "skypetoken=" + this.api.context.skypeToken.value,
 				RegistrationToken: this.api.context.registrationToken.raw,
